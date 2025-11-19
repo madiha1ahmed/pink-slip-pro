@@ -1,0 +1,139 @@
+{% extends 'base.html' %}
+
+{% block title %}Insights Dashboard{% endblock %}
+
+{% block content %}
+<div class="container my-4">
+  <h2 class="mb-4 text-center">Insights Dashboard</h2>
+
+  {% if teacher_name %}
+  <p class="text-primary font-weight-bold text-center">👋 Welcome, {{ teacher_name }}!</p>
+  {% endif %}
+
+  <div class="row">
+    <div class="col-md-6 mb-4">
+      <h4 class="text-info">Your Subjects Overview</h4>
+      <canvas id="subjectSlipPie"></canvas>
+    </div>
+  </div>
+
+  <div class="row">
+    {% for label, data in slips_per_grade_subject.items() %}
+    <div class="col-md-6 mb-4">
+      <h4 class="text-info">Slips per Student – {{ label }}</h4>
+      <canvas id="stackedSlipBar_{{ loop.index }}"></canvas>
+      <script>
+        const data{{ loop.index }} = {{ data | tojson }};
+        const students{{ loop.index }} = Object.keys(data{{ loop.index }});
+        const pink{{ loop.index }} = students{{ loop.index }}.map(s => data{{ loop.index }}[s]['Pink Slip'] || 0);
+        const yellow{{ loop.index }} = students{{ loop.index }}.map(s => data{{ loop.index }}[s]['Yellow Slip'] || 0);
+
+        new Chart(document.getElementById('stackedSlipBar_{{ loop.index }}'), {
+          type: 'bar',
+          data: {
+            labels: students{{ loop.index }},
+            datasets: [
+              { label: 'Pink Slip', data: pink{{ loop.index }}, backgroundColor: '#f06292', stack: 'slips' },
+              { label: 'Yellow Slip', data: yellow{{ loop.index }}, backgroundColor: '#ffd54f', stack: 'slips' }
+            ]
+          },
+          options: {
+            responsive: true,
+            scales: {
+              x: { stacked: true, ticks: { maxRotation: 45, minRotation: 30 } },
+              y: { stacked: true, beginAtZero: true }
+            }
+          }
+        });
+      </script>
+    </div>
+    {% endfor %}
+  </div>
+
+  {% if is_homeroom_teacher %}
+  <div class="row mt-4">
+    <div class="col-md-6 mb-4">
+      <h4 class="text-success">Homeroom: Slips per Subject</h4>
+      <canvas id="homeroomSubjectBar"></canvas>
+    </div>
+    <div class="col-md-6 mb-4">
+      <h4 class="text-success">Homeroom: Slips per Student</h4>
+      <canvas id="homeroomStudentBar"></canvas>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+  const slipCountsByType = {{ slip_counts_by_type | tojson }};
+  const slipDetails = {{ slip_type_details | tojson }};
+
+  new Chart(document.getElementById('subjectSlipPie'), {
+    type: 'pie',
+    data: {
+      labels: Object.keys(slipCountsByType),
+      datasets: [{
+        data: Object.values(slipCountsByType),
+        backgroundColor: ['#f06292', '#ffd54f']
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        tooltip: {
+          callbacks: {
+            label: function(ctx) {
+              const type = ctx.label;
+              const lines = slipDetails[type] || [];
+              return [type + ': ' + ctx.raw, ...lines];
+            }
+          }
+        },
+        legend: { position: 'bottom' }
+      }
+    }
+  });
+
+  {% if is_homeroom_teacher %}
+  const slipsBySubject = {{ slips_by_subject | tojson }};
+  new Chart(document.getElementById('homeroomSubjectBar'), {
+    type: 'bar',
+    data: {
+      labels: Object.keys(slipsBySubject),
+      datasets: [{
+        label: 'Total Slips',
+        data: Object.values(slipsBySubject),
+        backgroundColor: '#81c784'
+      }]
+    },
+    options: {
+      responsive: true,
+      scales: {
+        y: { beginAtZero: true },
+        x: { ticks: { maxRotation: 45, minRotation: 30 } }
+      }
+    }
+  });
+
+  const slipsByStudentHomeroom = {{ slips_by_student_homeroom | tojson }};
+  new Chart(document.getElementById('homeroomStudentBar'), {
+    type: 'bar',
+    data: {
+      labels: Object.keys(slipsByStudentHomeroom),
+      datasets: [{
+        label: 'Total Slips',
+        data: Object.values(slipsByStudentHomeroom),
+        backgroundColor: '#ffb74d'
+      }]
+    },
+    options: {
+      responsive: true,
+      scales: {
+        y: { beginAtZero: true },
+        x: { ticks: { maxRotation: 45, minRotation: 30 } }
+      }
+    }
+  });
+  {% endif %}
+</script>
+{% endblock %}

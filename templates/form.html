@@ -1,0 +1,94 @@
+{% extends 'base.html' %}
+
+{% block title %}Enter Missing Homework Details{% endblock %}
+
+{% block content %}
+<div class="card mx-auto" style="max-width: 500px;">
+    <div class="card-body">
+        <h2 class="card-title">Enter Missing Homework Details</h2>
+        <form method="POST" action="{{ url_for('form') }}">
+            {{ form.hidden_tag() }} <!-- CSRF token -->
+
+            <!-- Date Field -->
+            <div class="form-group">
+                {{ form.date.label(class="form-label") }}
+                {{ form.date(class="form-control") }}
+            </div>
+
+            <!-- Slip Type -->
+            <div class="form-group">
+                {{ form.slip_type.label(class="form-label") }}
+                {{ form.slip_type(class="form-control") }}
+            </div>
+
+            <!-- Grade Field -->
+            <div class="form-group">
+                {{ form.grade_of_student.label(class="form-label") }}
+                {{ form.grade_of_student(class="form-control", id="grade") }}
+            </div>
+
+            <!-- Student Field -->
+            <div class="form-group">
+                <label for="student_name">Student Name</label>
+                <select id="student_name" name="student_name" class="form-control" required>
+                    <option value="" disabled selected>Select Student</option>
+                </select>
+            </div>
+
+            <!-- Subject Field (Dynamically updated) -->
+            <div class="form-group">
+                {{ form.subject_of_student.label(class="form-label") }}
+                <select id="subject" name="subject_of_student" class="form-control" required>
+                    <option value="" disabled selected>Select Subject</option>
+                </select>
+            </div>
+
+            <!-- Homework Description -->
+            <div class="form-group">
+                {{ form.homework_desc.label(class="form-label") }}
+                {{ form.homework_desc(class="form-control", required=True) }}
+            </div>
+
+            <!-- Submit Button -->
+            {{ form.submit(class="btn btn-info btn-block") }}
+        </form>
+    </div>
+</div>
+
+<!-- JavaScript for Dynamic Dropdowns -->
+<script>
+    const gradeSubjectMapping = {{ grade_subject_mapping | tojson | safe }} || {};
+
+    $(document).ready(function () {
+        $('#grade').change(function () {
+            const selectedGrade = $(this).val();
+
+            // Fetch students dynamically
+            $.ajax({
+                url: `/get_students/${selectedGrade}`,
+                method: 'GET',
+                success: function (response) {
+                    $('#student_name').empty();
+                    $('#student_name').append('<option value="" disabled selected>Select Student</option>');
+                    response.students.forEach(student => {
+                        $('#student_name').append(`<option value="${student}">${student}</option>`);
+                    });
+                },
+                error: function () {
+                    alert('Failed to fetch students. Please try again.');
+                }
+            });
+
+            // Update Subject Dropdown based on selected grade
+            $('#subject').empty();
+            $('#subject').append('<option value="" disabled selected>Select Subject</option>');
+            if (gradeSubjectMapping[selectedGrade]) {
+                gradeSubjectMapping[selectedGrade].forEach(subject => {
+                    $('#subject').append(`<option value="${subject}">${subject}</option>`);
+                });
+            }
+        });
+    });
+</script>
+
+{% endblock %}

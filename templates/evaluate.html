@@ -1,0 +1,118 @@
+{% extends 'base.html' %}
+{% block title %}Evaluate Students{% endblock %}
+
+{% block content %}
+<div class="container">
+  <h2 class="mb-4 text-center">Student Evaluation Form</h2>
+
+  <!-- Month-Year Dropdown -->
+  <form id="monthYearForm" method="get">
+    <select id="monthSelect" name="month" class="form-select d-inline w-auto">
+      {% for m in months %}
+      <option value="{{ m }}">{{ m }}</option>
+      {% endfor %}
+    </select>
+  
+    <select id="yearSelect" name="year" class="form-select d-inline w-auto">
+      {% for y in years %}
+      <option value="{{ y }}">{{ y }}</option>
+      {% endfor %}
+    </select>
+  </form>
+
+  <form method="POST" id="evaluationForm">
+    <table class="table table-bordered">
+      <thead class="thead-light">
+        <tr>
+          <th>Name</th>
+          <th>Grade</th>
+          <th>Responsibility</th>
+          <th>Self-Regulation</th>
+          <th>Organization</th>
+          <th>Collaboration / Initiative</th>
+          <th>Independent Work</th>
+          <th>Teacher's Comment</th>
+          <th>Average</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for student in students %}
+        <tr>
+          <td>{{ student.name }}</td>
+          <td>{{ student.grade }}</td>
+          {% set sid = student.id %}
+          {% for field in ['responsibility', 'self_regulation', 'organization', 'collaboration', 'independent_work'] %}
+          <td>
+            <select name="{{ sid }}_{{ field }}" class="form-control score-input" onchange="calculateAverage(this)">
+              <option value="">--</option>
+              {% for i in range(1, 6) %}
+              <option value="{{ i }}">{{ i }}</option>
+              {% endfor %}
+            </select>
+          </td>
+          {% endfor %}
+          <td><textarea name="{{ sid }}_comment" class="form-control" rows="2" placeholder="Overall Remarks (Optional)"></textarea></td>
+          <td><input type="text" class="form-control average-field" readonly></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="text-center">
+      <button type="submit" class="btn btn-info">Submit Evaluations</button>
+    </div>
+  </form>
+</div>
+
+<script>
+  function calculateAverage(selectElement) {
+    const row = selectElement.closest('tr');
+    const inputs = row.querySelectorAll('.score-input');
+    let total = 0, count = 0;
+    inputs.forEach(select => {
+      const val = parseInt(select.value);
+      if (!isNaN(val)) {
+        total += val;
+        count++;
+      }
+    });
+    const avgField = row.querySelector('.average-field');
+    avgField.value = count > 0 ? (total / count).toFixed(2) : '';
+  }
+
+  document.getElementById("evaluationForm").addEventListener("submit", function (e) {
+    const rows = document.querySelectorAll("tbody tr");
+    let formValid = true;
+    rows.forEach(row => {
+      const selects = row.querySelectorAll(".score-input");
+      selects.forEach(select => {
+        if (!select.value) {
+          formValid = false;
+          select.classList.add("border-danger");
+        } else {
+          select.classList.remove("border-danger");
+        }
+      });
+    });
+    if (!formValid) {
+      e.preventDefault();
+      alert("⚠️ Please fill all fields for all students before submitting.");
+    }
+  });
+
+  const form = document.getElementById('monthYearForm');
+  const monthSelect = document.getElementById('monthSelect');
+  const yearSelect = document.getElementById('yearSelect');
+
+  function redirectToEvaluatePage() {
+    const month = monthSelect.value;
+    const year = yearSelect.value;
+    if (month && year) {
+      window.location.href = `/evaluate_students/${month}/${year}`;
+    }
+  }
+
+  monthSelect.addEventListener('change', redirectToEvaluatePage);
+  yearSelect.addEventListener('change', redirectToEvaluatePage);
+  
+</script>
+{% endblock %}

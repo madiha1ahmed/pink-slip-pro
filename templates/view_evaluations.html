@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+
+{% block title %}View Student Evaluations{% endblock %}
+
+{% block content %}
+<div class="container">
+  <h2 class="mb-4 text-center text-info">Submitted Student Evaluations</h2>
+
+  <!-- Month and Year Selector -->
+  <form method="get" action="{{ url_for('view_evaluations') }}" class="form-inline justify-content-center mb-4">
+    <label class="mr-2" for="month">Month:</label>
+    <select name="month" id="month" class="form-control mr-3" required>
+      <option value="">-- Month --</option>
+      {% for m in months %}
+        <option value="{{ m }}" {% if selected_month == m %}selected{% endif %}>{{ m }}</option>
+      {% endfor %}
+    </select>
+
+    <label class="mr-2" for="year">Year:</label>
+    <select name="year" id="year" class="form-control mr-3" required>
+      <option value="">-- Year --</option>
+      {% for y in years %}
+        <option value="{{ y }}" {% if selected_year == y %}selected{% endif %}>{{ y }}</option>
+      {% endfor %}
+    </select>
+
+    <button type="submit" class="btn btn-info">View</button>
+  </form>
+
+  {% if evaluations %}
+  <table class="table table-bordered table-striped table-sm">
+    <thead class="thead-light">
+      <tr>
+        <th>Student</th>
+        <th>Grade</th>
+        <th>Responsibility</th>
+        <th>Self-Regulation</th>
+        <th>Organization</th>
+        <th>Collaboration/Initiative</th>
+        <th>Independent Work</th>
+        <th>Remarks</th>
+        <th>Avg. Score</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for eval in evaluations %}
+      <tr>
+        <td>{{ eval.student_name }}</td>
+        <td>{{ eval.grade }}</td>
+        <td>{{ eval.responsibility }}</td>
+        <td>{{ eval.self_regulation }}</td>
+        <td>{{ eval.organization }}</td>
+        <td>{{ eval.collaboration_initiative }}</td>
+        <td>{{ eval.independent_work }}</td>
+        <td>{{ eval.remarks }}</td>
+        <td>{{ eval.average_score }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% elif selected_month and selected_year %}
+    <p class="text-center text-danger">No evaluations submitted for {{ selected_month }} {{ selected_year }}.</p>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,37 @@
+/* Custom Styles for Health Tracker Dashboard */
+
+main.container {
+    height: 560px
+}
+
+#pinkSlipTable_filter {
+    display: block !important;
+}
+
+/* Change the background color to white */
+body {
+    background-color: white;
+}
+
+/* Center-align the logo */
+.text-center img {
+    display: block;
+    margin: 0 auto;
+}
+
+.btn-pink {
+    background-color: #ff69b4 !important;
+    /* Soft Pink */
+    border-color: #ff69b4 !important;
+    color: white !important;
+}
+
+body {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
+main.container {
+    flex: 1;
+}

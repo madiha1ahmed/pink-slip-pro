@@ -1,0 +1,138 @@
+{% extends 'base.html' %}
+
+{% block title %}Evaluate Students{% endblock %}
+
+{% block content %}
+<div class="container">
+  <h2 class="mb-4 text-center text-info">Evaluate Students – Student of the Month</h2>
+
+  <!-- Month and Year Select Form -->
+  <form method="get" action="{{ url_for('evaluate_students') }}" class="form-inline justify-content-center mb-4">
+    <label for="month" class="mr-2">Select Month:</label>
+    <select name="month" id="month" class="form-control mr-3" required>
+      <option value="">-- Month --</option>
+      {% for m in months %}
+        <option value="{{ m }}" {% if selected_month == m %}selected{% endif %}>{{ m }}</option>
+      {% endfor %}
+    </select>
+
+    <label for="year" class="mr-2">Select Year:</label>
+    <select name="year" id="year" class="form-control mr-3" required>
+      <option value="">-- Year --</option>
+      {% for y in years %}
+        <option value="{{ y }}" {% if selected_year == y %}selected{% endif %}>{{ y }}</option>
+      {% endfor %}
+    </select>
+
+    <button type="submit" class="btn btn-info">Load</button>
+  </form>
+
+  {% if selected_month and selected_year %}
+  <form method="POST" action="{{ url_for('save_evaluations') }}" id="evalForm">
+
+    <input type="hidden" name="month" value="{{ selected_month }}">
+    <input type="hidden" name="year" value="{{ selected_year }}">
+
+    <table class="table table-bordered table-sm">
+      <thead class="thead-light">
+        <tr>
+          <th>Student</th>
+          <th>Grade</th>
+          <th>Responsibility</th>
+          <th>Self-Regulation</th>
+          <th>Organization</th>
+          <th>Collaboration/Initiative</th>
+          <th>Independent Work</th>
+          <th>Remarks</th>
+          <th>Avg. Score</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for student in students %}
+        {% set key = (student.name, student.grade) %}
+        {% set eval = evaluations.get(key) %}
+        <tr>
+          <td>
+            {{ student.name }}
+            <input type="hidden" name="student_{{ student.name }}_{{ student.grade }}">
+          </td>
+          <td>{{ student.grade }}</td>
+          {% for param in ['responsibility', 'self_regulation', 'organization', 'collaboration_initiative', 'independent_work'] %}
+          <td>
+            <select name="{{ param }}_{{ student.name }}_{{ student.grade }}" class="form-control">
+
+              <option value="">--</option>
+              {% for i in range(1, 6) %}
+                <option value="{{ i }}" {% if eval and eval[param] == i %}selected{% endif %}>{{ i }}</option>
+              {% endfor %}
+            </select>
+            
+          </td>
+          {% endfor %}
+          <td>
+            <textarea name="remarks_{{ student.name }}_{{ student.grade }}" class="form-control" rows="2">{{ eval.remarks if eval else '' }}</textarea>
+          </td>
+          <td>
+            {{ eval.average_score if eval and eval.average_score else '—' }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="text-center mt-4">
+      <button type="submit" name="action" value="save" class="btn btn-warning mr-2">💾 Save Progress</button>
+      <button type="submit" name="action" value="submit" class="btn btn-success">✅ Submit Final Evaluation</button>
+    </div>
+  </form>
+  {% endif %}
+</div>
+
+<script>
+  // live average updates
+  document.querySelectorAll("#evalForm select").forEach(select => {
+    select.addEventListener("change", updateAverage);
+  });
+
+  function updateAverage() {
+    const row = this.closest("tr");
+    const selects = row.querySelectorAll("select");
+    let total = 0, count = 0;
+
+    selects.forEach(sel => {
+      const val = parseInt(sel.value);
+      if (!isNaN(val)) { total += val; count++; }
+    });
+
+    row.querySelector("td:last-child").textContent = (count === 5) ? (total / 5).toFixed(2) : '—';
+  }
+
+  // Only validate on final submission
+  document.getElementById("evalForm").addEventListener("submit", function (e) {
+    const isSubmitting = e.submitter && e.submitter.value === "submit";
+    if (!isSubmitting) return; // allow partial save
+
+    let allValid = true;
+    const rows = this.querySelectorAll("tbody tr");
+
+    rows.forEach(row => {
+      row.querySelectorAll("select").forEach(sel => {
+        if (!sel.value) {
+          allValid = false;
+          sel.classList.add("is-invalid");
+        } else {
+          sel.classList.remove("is-invalid");
+        }
+      });
+    });
+
+    if (!allValid) {
+      e.preventDefault();
+      alert("⚠️ Please make sure all rating fields are filled in before submitting.");
+    }
+  });
+</script>
+
+
+{% endblock %}
+

@@ -1,0 +1,42 @@
+{% extends 'base.html' %}
+
+{% block title %}PinkSlip Pro: Home{% endblock %}
+
+{% block content %}
+
+
+<div class="container mb-5">
+<div class="container d-flex flex-wrap justify-content-center align-items-start">
+    <!-- Poster on Left -->
+    <div class="p-2 flex-grow-1 text-center" style="max-width: 400px;">
+        <img src="{{ url_for('static', filename='images/poster.jpg') }}" alt="PinkSlip Pro Poster"
+        img src="{{ url_for('static', filename='images/Pink-slip-workflow.jpg') }}" alt="PinkSlip Pro Workflow"
+            class="img-fluid w-100 shadow" style="max-height: 700px; object-fit: contain;">
+    </div>
+
+    <div class="p-2 flex-grow-1 text-center" style="max-width: 1000px;">
+        <img src="{{ url_for('static', filename='images/Pink-slip-workflow.jpg') }}" alt="PinkSlip Pro Workflow"
+            class="img-fluid w-100 shadow" style="max-height: 700px; object-fit: contain;">
+    </div>
+
+
+
+    <!-- Text on Right -->
+    <div class="p-4 flex-grow-1" style="min-width: 300px;">
+        <h3 class="text-info font-weight-bold mb-3">Welcome to PinkSlip Pro</h3>
+        <p class="lead text-left">
+            PinkSlip Pro is a streamlined digital solution for tracking missed homework. 
+            Assign a pink slip when a student misses an assignment, and an email is instantly sent to the parent. 
+            When a student receives three pink slips, an automatic detailed report is sent to both the parent and homeroom teacher. 
+            Each pink slip is also archived two months after it's issued. 
+            No more paper. Better record-keeping. Timely communication.
+        </p>
+        <p class="lead text-left">
+            Every pink slip is archived after two months. Homeroom teachers and assigning teachers are notified when students reach three slips.
+            No more paperwork, no more forgetting. Stay organized and proactive with PinkSlip Pro.
+        </p>
+        <a href="{{ url_for('form') }}" class="btn btn-info btn-lg mt-3">Start Tracking Student Homework</a>
+    </div>
+</div>
+</div>
+{% endblock %}

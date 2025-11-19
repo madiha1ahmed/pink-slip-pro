@@ -1,0 +1,28 @@
+{% extends 'base.html' %}
+{% block title %}Generate AI Report{% endblock %}
+
+{% block content %}
+<div class="container">
+  <h2 class="text-center text-info mb-4">Generate AI-Powered Student Evaluation Report</h2>
+
+  <form method="post" class="form-inline justify-content-center">
+    <label class="mr-2">Month:</label>
+    <select name="month" class="form-control mr-3" required>
+      <option value="">-- Select Month --</option>
+      {% for m in months %}
+        <option value="{{ m }}">{{ m }}</option>
+      {% endfor %}
+    </select>
+
+    <label class="mr-2">Year:</label>
+    <select name="year" class="form-control mr-3" required>
+      <option value="">-- Select Year --</option>
+      {% for y in years %}
+        <option value="{{ y }}">{{ y }}</option>
+      {% endfor %}
+    </select>
+
+    <button type="submit" class="btn btn-success">Generate Report</button>
+  </form>
+</div>
+{% endblock %}
