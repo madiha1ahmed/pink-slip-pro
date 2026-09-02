@@ -15,7 +15,7 @@ class HealthDataForm(FlaskForm):
     #grade_of_student = IntegerField('Grade', validators=[InputRequired(), NumberRange(min=1)])
     grade_of_student = SelectField(
         'Grade',
-        choices=[('', 'Select Grade')] + [(str(i), f"{i}") for i in range(1, 9)],  # Add placeholder option
+        choices=[('', 'Select Grade')] + [(str(i), f"{i}") for i in ['JK','SK',1,2,3,4,5,6,7,8]],  # Add placeholder option
         validators=[DataRequired()]
     )
     subject_of_student = SelectField(

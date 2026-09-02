@@ -145,11 +145,10 @@ class Teacher(db.Model):
             raw_grades = json.loads(self.grades_json or "{}")
         except Exception:
             raw_grades = {}
-        # Keys come back as strings from JSON; convert numeric grades back to ints
-        grades = {}
-        for k, v in raw_grades.items():
-            key = int(k) if str(k).isdigit() else k
-            grades[key] = v
+        # Grades are categorical (JK, SK, 1..8) — keep everything as strings so
+        # they compare cleanly against Student.grade (also a string column).
+        homeroom = [str(g) for g in homeroom]
+        grades = {str(k): v for k, v in raw_grades.items()}
         return {
             "password": self.password_hash,
             "name": self.name,
@@ -168,7 +167,7 @@ class HealthData(db.Model):
     date = db.Column(db.Date, nullable=False)
     slip_type = db.Column(db.String, nullable=False)
     student_name = db.Column(db.String, nullable=False)
-    grade_of_student = db.Column(db.Integer, nullable=False)
+    grade_of_student = db.Column(db.String(10), nullable=False)
     subject_of_student = db.Column(db.String, nullable=False)
     homework_desc = db.Column(db.String, nullable=False)
     teacher_email = db.Column(db.String, nullable=False)
@@ -185,11 +184,38 @@ class HealthData(db.Model):
 class Student(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
-    grade = db.Column(db.Integer, nullable=False)
-    parent_email_mom = db.Column(db.String(150), nullable=False)
-    parent_email_dad = db.Column(db.String(150), nullable=False)  # Add this column
-    parent_whatsapp = db.Column(db.String(20), nullable=False)
-    student_email = db.Column(db.String(150), nullable=False)
+    grade = db.Column(db.String(10), nullable=False)          # "JK","SK","1"..."8"
+    parent_email_mom = db.Column(db.String(150), nullable=True)
+    parent_email_dad = db.Column(db.String(150), nullable=True)
+    parent_whatsapp_dad = db.Column(db.String(30), nullable=True)   # father's mobile
+    parent_whatsapp_mom = db.Column(db.String(30), nullable=True)   # mother's mobile
+    student_email = db.Column(db.String(150), nullable=True)
+
+    @property
+    def parent_emails(self):
+        """All parent emails on file (0, 1, or 2)."""
+        return [e.strip() for e in [self.parent_email_mom, self.parent_email_dad]
+                if e and str(e).strip()]
+
+    @property
+    def parent_phones(self):
+        """All parent mobiles on file, normalized to +E.164 (0, 1, or 2)."""
+        nums = []
+        for raw in [self.parent_whatsapp_mom, self.parent_whatsapp_dad]:
+            n = normalize_na_phone(raw)
+            if n and n not in nums:
+                nums.append(n)
+        return nums
+
+    @property
+    def parent_whatsapp(self):
+        """Backward-compatible single number: first available parent mobile."""
+        phones = self.parent_phones
+        return phones[0] if phones else None
+
+    @property
+    def has_any_contact(self):
+        return bool(self.parent_emails or self.parent_phones)
 
     def __repr__(self):
         return f"<Student {self.name} (Grade {self.grade})>"
@@ -203,7 +229,7 @@ class ArchiveData(db.Model):
     date = db.Column(db.Date, nullable=False)
     slip_type = db.Column(db.String, nullable=False)
     student_name = db.Column(db.String, nullable=False)
-    grade_of_student = db.Column(db.Integer, nullable=False)
+    grade_of_student = db.Column(db.String(10), nullable=False)
     subject_of_student = db.Column(db.String, nullable=False)
     homework_desc = db.Column(db.String, nullable=False)
     teacher_email = db.Column(db.String, nullable=False)  # Required for filtering
@@ -212,7 +238,7 @@ class StudentEvaluation(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     teacher_email = db.Column(db.String, nullable=False)
     student_name = db.Column(db.String, nullable=False)
-    grade = db.Column(db.Integer, nullable=False)
+    grade = db.Column(db.String(10), nullable=False)
     month = db.Column(db.String, nullable=False)  # e.g., "September"
     year = db.Column(db.Integer, nullable=False)  # e.g., 2025
 
@@ -248,7 +274,7 @@ class AttendanceSlip(db.Model):
     date = db.Column(db.Date, nullable=False, index=True)
     slip_type = db.Column(db.String, nullable=False)     # "Late" | "Absent"
     student_name = db.Column(db.String, nullable=False, index=True)
-    grade = db.Column(db.Integer, nullable=False)
+    grade = db.Column(db.String(10), nullable=False)
     note = db.Column(db.String, nullable=True)           # optional reason
     recorded_by = db.Column(db.String, nullable=False)   # teacher email
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -274,37 +300,27 @@ def check_three_pink_slips(student_name):
         slips = HealthData.query.filter_by(student_name=student_name, slip_type="Pink Slip").order_by(HealthData.date).all()
         student = Student.query.filter_by(name=student_name).first()
 
-        if not student or not student.parent_email_mom or not student.parent_email_dad:
-            print(f"⚠️ Parent email not found for {student_name}")  # Debugging print
+        if not student:
+            print(f"⚠️ No student record found for {student_name}")
             return
-        
-        if not student or not student.student_email:
-            print(f"⚠️ Student email not found for {student_name}")  # Debugging print
+
+        # We now send to whoever is reachable. Only skip entirely if there is
+        # NO email and NO phone anywhere on file for this student.
+        if not student.has_any_contact:
+            print(f"⚠️ No contact info (email or phone) on file for {student_name} — notification skipped.")
             return
-        
-        if not student or not student.parent_whatsapp:
-            print(f"⚠️ Parent WhatsApp not found for {student_name}")  # Debugging print
-            return
-        
+
         parent_email_mom = student.parent_email_mom
         parent_email_dad = student.parent_email_dad
-        student_email = student.student_email
-        parent_whatsapp = student.parent_whatsapp.strip('"').strip("'").strip()
-        print(f"📧 Preparing email for {student_name} - Total Pink Slips: {len(slips)}")
-        print(f"📧 Preparing whatsapp for {student_name} - Total Pink Slips: {len(slips)}")  # Debugging print
+        print(f"📧 Preparing notification for {student_name} — Total Pink Slips: {len(slips)} "
+              f"(emails: {len(student.parent_emails)}, phones: {len(student.parent_phones)})")
 
         if len(slips) == 1:
-            print(f"📤 Sending first pink slip email to {parent_email_mom, parent_email_dad}")  # Debugging print
             send_email_to_parent(student_name, parent_email_mom, parent_email_dad, [slips[0]])
-            
         elif len(slips) == 2:
-            print(f"📤 Sending second pink slip email to {parent_email_mom, parent_email_dad}")  # Debugging print
             send_email_to_parent(student_name, parent_email_mom, parent_email_dad, [slips[1]])
-            
         elif len(slips) == 3:
-            print(f"⚠️ Third pink slip detected! Sending urgent email to {parent_email_mom, parent_email_dad}")  # Debugging print
             send_email_to_parent(student_name, parent_email_mom, parent_email_dad, slips, is_final=True)
-            
             for slip in slips:
                 archive_entry(slip.id)
     except Exception as e:
@@ -317,6 +333,31 @@ def _normalize_e164(number):
         return None
     n = str(number).replace("whatsapp:", "").strip().strip('"').strip("'").strip()
     return n or None
+
+
+def normalize_na_phone(raw):
+    """Turn messy North-American numbers into +E.164.
+
+    Handles blanks/NaN and formats like '(416)839-9850', '647 708 4808',
+    '4168399850', '+1 416 839 9850', '1-416-839-9850'.  Returns None if there
+    aren't enough digits to be a real number.
+    """
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s or s.lower() == "nan":
+        return None
+    if s.startswith("+"):
+        digits = "".join(ch for ch in s if ch.isdigit())
+        return "+" + digits if len(digits) >= 10 else None
+    digits = "".join(ch for ch in s if ch.isdigit())
+    if len(digits) == 10:
+        return "+1" + digits
+    if len(digits) == 11 and digits.startswith("1"):
+        return "+" + digits
+    if len(digits) >= 11:          # already has a country code
+        return "+" + digits
+    return None                    # too short to be valid
 
 
 def _send_sms_clicksend(to_number, message_body):
@@ -403,12 +444,17 @@ def send_attendance_notification(student, slip_type, on_date, note=None):
         + "\n\nIf you believe this is in error, please contact the school office.\n\n"
         f"Jazakumullahu khair,\nAl-Mahdi Learning Institute"
     )
-    recipients = [e for e in [student.parent_email_mom, student.parent_email_dad] if e]
-    send_email(subject, recipients, body, cc=None)
-    if getattr(student, "parent_whatsapp", None):
-        notify_parent_channels(student.parent_whatsapp,
-                               f"Al-Mahdi: {student.name} was marked {slip_type.lower()} on "
-                               f"{on_date.strftime('%b %d, %Y')}." + (f" Note: {note}" if note else ""))
+    recipients = student.parent_emails
+    phones = student.parent_phones
+    if not recipients and not phones:
+        print(f"⚠️ No contact info for {student.name}; attendance notice not sent.")
+        return
+    if recipients:
+        send_email(subject, recipients, body, cc=None)
+    sms_text = (f"Al-Mahdi: {student.name} was marked {slip_type.lower()} on "
+                f"{on_date.strftime('%b %d, %Y')}." + (f" Note: {note}" if note else ""))
+    for ph in phones:
+        notify_parent_channels(ph, sms_text)
 
 
 def send_email(subject, recipients, body, cc=None):
@@ -590,9 +636,9 @@ def send_email_to_parent(student_name, parent_email_mom, parent_email_dad, slips
         if is_final and student_grade is not None:
             for email, info in get_teachers().items():
                 homeroom_grades = info.get("homeroom_grade")
-                if isinstance(homeroom_grades, int):
+                if isinstance(homeroom_grades, (int, str)):
                     homeroom_grades = [homeroom_grades]
-                if isinstance(homeroom_grades, list) and student_grade in homeroom_grades:
+                if isinstance(homeroom_grades, list) and str(student_grade) in [str(g) for g in homeroom_grades]:
                     cc_set.add(email)
                     break
 
@@ -605,8 +651,9 @@ def send_email_to_parent(student_name, parent_email_mom, parent_email_dad, slips
         bcc_recipients = [SENDER_BCC_EMAIL] if SENDER_BCC_EMAIL else []
 
         recipients = [e for e in [parent_email_mom, parent_email_dad] if e]
-        if not recipients:
-            print(f"⚠️ No parent email for {student_name}; skipping email send.")
+        phones = student.parent_phones if student else []
+        if not recipients and not phones:
+            print(f"⚠️ No contact info (email or phone) for {student_name}; nothing sent.")
             return
 
         # Subjects and body
@@ -648,25 +695,30 @@ Jazakumullahu Khair,
 Al-Mahdi Learning Institute - PinkSlip Pro
 """
 
-        try:
-            message = Message(
-                subject=email_subject,
-                sender=app.config['MAIL_USERNAME'],
-                recipients=recipients,         # mom/dad as available
-                cc=cc_recipients,              # + secretary only on 3rd
-                bcc=bcc_recipients,            # ← BCC sender on all
-                body=email_body
-            )
-            mail.send(message)
-            print(f"📧 Sent email to {', '.join(recipients)} | CC: {', '.join(cc_recipients) if cc_recipients else '(none)'} | BCC: {', '.join(bcc_recipients) if bcc_recipients else '(none)'}")
-        except Exception as e:
-            print(f"Error sending email: {e}")
-
-        if parent_whatsapp:
-            text_body = re.sub(r"\*\*(.*?)\*\*", r"\1", email_body).strip()
-            notify_parent_channels(parent_whatsapp, text_body)
+        if recipients:
+            try:
+                message = Message(
+                    subject=email_subject,
+                    sender=app.config['MAIL_USERNAME'],
+                    recipients=recipients,         # mom/dad as available
+                    cc=cc_recipients,              # + secretary only on 3rd
+                    bcc=bcc_recipients,            # ← BCC sender on all
+                    body=email_body
+                )
+                mail.send(message)
+                print(f"📧 Sent email to {', '.join(recipients)} | CC: {', '.join(cc_recipients) if cc_recipients else '(none)'} | BCC: {', '.join(bcc_recipients) if bcc_recipients else '(none)'}")
+            except Exception as e:
+                print(f"Error sending email: {e}")
         else:
-            print(f"⚠️ No mobile number found for {student_name} (SMS/WhatsApp skipped)")
+            print(f"ℹ️ No parent email for {student_name}; sending SMS only.")
+
+        # Text every parent mobile we have (father and/or mother)
+        if phones:
+            text_body = re.sub(r"\*\*(.*?)\*\*", r"\1", email_body).strip()
+            for ph in phones:
+                notify_parent_channels(ph, text_body)
+        else:
+            print(f"ℹ️ No mobile number for {student_name}; SMS skipped.")
 
     except Exception as e:
         print(f"Error in send_email_to_parent: {e}")
@@ -823,7 +875,7 @@ def _homeroom_grades_for(teacher_email):
     hg = info.get("homeroom_grade", [])
     if isinstance(hg, int):
         hg = [hg]
-    return [g for g in (hg or []) if isinstance(g, int)]
+    return [str(g) for g in (hg or [])]
 
 
 @app.route('/attendance', methods=['GET', 'POST'])
@@ -952,8 +1004,8 @@ def form():
 
     # Fetch students in allowed grades (Student.grade is an integer column,
     # so only pass numeric grades to the query — JK/SK etc. are skipped safely)
-    numeric_grades = [g for g in allowed_grades if isinstance(g, int)]
-    students_in_allowed_grades = Student.query.filter(Student.grade.in_(numeric_grades)).all()
+    grade_strs = [str(g) for g in allowed_grades]
+    students_in_allowed_grades = Student.query.filter(Student.grade.in_(grade_strs)).all()
     student_choices = [(student.name, student.name) for student in students_in_allowed_grades]
 
     # Prepare valid subjects (for all grades)
@@ -982,7 +1034,7 @@ def form():
             date=form.date.data,
             slip_type=form.slip_type.data,
             student_name=form.student_name.data,
-            grade_of_student=int(form.grade_of_student.data),
+            grade_of_student=str(form.grade_of_student.data),
             subject_of_student=form.subject_of_student.data,
             homework_desc=form.homework_desc.data,
             teacher_email=teacher_email,
@@ -1025,7 +1077,7 @@ def dashboard():
         print(f"daily task (dashboard) error: {e}")
     teacher_info = get_teachers().get(teacher_email, {})
     homeroom_grades = teacher_info.get("homeroom_grade")  # Can be int or list
-    if isinstance(homeroom_grades, int):
+    if isinstance(homeroom_grades, (int, str)):
         homeroom_grades = [homeroom_grades]  # normalize to list
 
     archive_expired_pink_slips()
@@ -1034,8 +1086,8 @@ def dashboard():
     # Query 1: All slips for homeroom students
     homeroom_slips = []
     if homeroom_grades:
-        numeric_homeroom = [g for g in homeroom_grades if isinstance(g, int)]
-        students = Student.query.filter(Student.grade.in_(numeric_homeroom)).all()
+        grade_strs = [str(g) for g in homeroom_grades]
+        students = Student.query.filter(Student.grade.in_(grade_strs)).all()
         student_names = [s.name for s in students]
         homeroom_slips = HealthData.query.filter(HealthData.student_name.in_(student_names)).all()
 
@@ -1119,7 +1171,7 @@ def archive():
     teacher_info = get_teachers().get(teacher_email, {})
     homeroom_grades = teacher_info.get("homeroom_grade")
     teacher_name = teacher_info.get("name", "")
-    if isinstance(homeroom_grades, int):
+    if isinstance(homeroom_grades, (int, str)):
         homeroom_grades = [homeroom_grades]
 
     archive_expired_pink_slips()
@@ -1151,7 +1203,7 @@ def archive():
 @app.route('/get_students/<grade>', methods=['GET'])
 def get_students(grade):
     # Query the database for students in the selected grade
-    students = Student.query.filter_by(grade=int(grade)).all()
+    students = Student.query.filter_by(grade=str(grade)).all()
     student_names = [student.name for student in students]  # Extract names
     return jsonify({'students': student_names})
 
@@ -1266,7 +1318,7 @@ def convert_yellow_to_pink(entry_id):
 
         # Get student details
         student = Student.query.filter_by(name=entry.student_name).first()
-        if student and student.parent_email_mom and student.parent_email_dad and student.parent_whatsapp:
+        if student and student.has_any_contact:
             # Count the number of Pink Slips **AFTER** the conversion
             pink_slips = HealthData.query.filter_by(student_name=entry.student_name, slip_type="Pink Slip").count()
 
@@ -1301,7 +1353,7 @@ def insights():
     homeroom_grades = teacher_info.get("homeroom_grade", [])
     subjects_by_grade = teacher_info.get("grades", {})
 
-    if isinstance(homeroom_grades, int):
+    if isinstance(homeroom_grades, (int, str)):
         homeroom_grades = [homeroom_grades]
     elif not homeroom_grades:
         homeroom_grades = []
@@ -1356,8 +1408,8 @@ def insights():
     slips_over_time = dict(sorted(slips_over_time.items()))
 
     if homeroom_grades:
-        numeric_homeroom = [g for g in homeroom_grades if isinstance(g, int)]
-        homeroom_students = Student.query.filter(Student.grade.in_(numeric_homeroom)).all()
+        grade_strs = [str(g) for g in homeroom_grades]
+        homeroom_students = Student.query.filter(Student.grade.in_(grade_strs)).all()
         homeroom_names = [s.name for s in homeroom_students]
 
         slips = HealthData.query.filter(HealthData.student_name.in_(homeroom_names)).all()
@@ -1485,7 +1537,7 @@ def save_evaluations():
         if not key.startswith("student_"):
             continue
         parts = key.split("_")
-        grade = int(parts[-1])
+        grade = parts[-1]
         student_name = "_".join(parts[1:-1])  # handles underscores in names
 
         responsibility = parse_int(f"responsibility_{student_name}_{grade}")
