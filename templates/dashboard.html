@@ -1,97 +1,74 @@
 {% extends 'base.html' %}
-
-{% block title %}PinkSlip Pro Dashboard{% endblock %}
+{% block title %}Dashboard · PinkSlip Pro{% endblock %}
 
 {% block content %}
-
-<div id="data-table">
-    <h3>Students' PinkSlip Database</h3>
-
-    {% if teacher_name %}
-    <h2><p class="text-primary font-weight-bold">👋 Welcome, {{ teacher_name }}!</p></h2>
-    {% endif %}
-  
+<div class="page-head">
+  <div>
+    <span class="eyebrow">Slip database</span>
+    <h2>{% if teacher_name %}Assalamu alaikum, {{ teacher_name }}{% else %}Your dashboard{% endif %}</h2>
+    <p>Every slip you’ve assigned{% if homeroom_grades %}, plus all slips for your homeroom{% endif %}.</p>
+  </div>
+  <div style="display:flex; gap:.5rem; align-items:center; flex-wrap:wrap;">
     {% if homeroom_grades %}
-        <p class="text-success font-weight-bold">
-          🏠 Homeroom Grade: {{ homeroom_grades | join(", ") }}
-        </p>
-    {% else %}
-        <!-- Nothing shown — not a homeroom teacher -->
+      <span class="chip">🏠 Homeroom · Grade {{ homeroom_grades | join(", ") }}</span>
     {% endif %}
-      <!--<p class="text-info font-weight-bold">
-        👩‍🏫 You are viewing the slips you personally assigned.
-      </p>-->
-
-
-    
-    <table id="pinkSlipTable" class="table table-bordered">
-        <thead>
-            <tr>
-                <th>Date</th>
-                <th>Type of Slip</th>
-                <th>Student Name</th>
-                <th>Grade</th>
-                <th>Subject</th>
-                <th>Homework Description</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for i in range(dates|length) %}
-            <tr>
-                <td>{{ dates[i] }}</td>
-                <td>{{ slip_type_data[i] }}</td>
-                <td>{{ student_name_data[i] }}</td>
-                <td>{{ grade_of_student_data[i] }}</td>
-                <td>{{ subject_of_student_data[i] }}</td>
-                <td>{{ homework_desc_data[i] }}</td>
-                <td>
-                    <!-- Archive button -->
-                    <form method="POST" action="{{ url_for('archive_entry', entry_id=ids[i]) }}"
-                        style="display: inline;">
-                        <button type="submit" class="btn btn-warning btn-sm">Archive</button>
-                    </form>
-
-                    <!-- Convert Yellow Slip to Pink Slip -->
-                    {% if slip_type_data[i] == "Yellow Slip" %}
-                    <form method="POST" action="{{ url_for('convert_yellow_to_pink', entry_id=ids[i]) }}"
-                        style="display: inline;" onsubmit="return confirmConvert()">
-                        <button type="submit" class="btn btn-pink btn-sm">Convert to Pink Slip</button>
-                    </form>
-                    {% endif %}
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-
-    </table>
-    <script>
-        // Confirmation for archiving
-        document.querySelectorAll('form[action^="{{ url_for('archive_entry', entry_id=0)[:-1] }}"]').forEach(form => {
-            form.addEventListener('submit', function (event) {
-                if (!confirm("⚠️ Are you sure you want to archive this entry?")) {
-                    event.preventDefault();
-                }
-            });
-        });
-
-        // Confirmation for converting Yellow Slip to Pink Slip
-        function confirmConvert() {
-            return confirm("⚠️ Are you sure you want to convert this Yellow Slip to a Pink Slip?");
-        }
-    </script>
-
-
-
+    <a href="{{ url_for('form') }}" class="btn btn-primary">+ Assign a slip</a>
+  </div>
 </div>
 
-<script>
-    $(document).ready(function () {
-        $('#pinkSlipTable').DataTable({
-            "pageLength": 5, // Optional: Set rows per page
-            "searching": true // Enable search box
-        });
-    });
-</script>
+<div class="ledger">
+  <table id="pinkSlipTable" class="table" style="width:100%;">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Slip</th>
+        <th>Student</th>
+        <th>Grade</th>
+        <th>Subject</th>
+        <th>Homework</th>
+        <th style="text-align:right;">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for i in range(dates|length) %}
+      <tr>
+        <td style="white-space:nowrap;">{{ dates[i] }}</td>
+        <td>
+          {% if slip_type_data[i] == "Yellow Slip" %}
+            <span class="badge-slip yellow">Yellow</span>
+          {% else %}
+            <span class="badge-slip pink">Pink</span>
+          {% endif %}
+        </td>
+        <td>{{ student_name_data[i] }}</td>
+        <td>{{ grade_of_student_data[i] }}</td>
+        <td>{{ subject_of_student_data[i] }}</td>
+        <td>{{ homework_desc_data[i] }}</td>
+        <td style="text-align:right; white-space:nowrap;">
+          <form method="POST" action="{{ url_for('archive_entry', entry_id=ids[i]) }}" style="display:inline;">
+            <button type="submit" class="btn btn-warning btn-sm">Archive</button>
+          </form>
+          {% if slip_type_data[i] == "Yellow Slip" %}
+          <form method="POST" action="{{ url_for('convert_yellow_to_pink', entry_id=ids[i]) }}" style="display:inline;" onsubmit="return confirmConvert()">
+            <button type="submit" class="btn btn-pink btn-sm">→ Pink</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
 
+{% block scripts %}
+<script>
+  $(document).ready(function () {
+    $('#pinkSlipTable').DataTable({ pageLength: 8, searching: true, order: [[0,'desc']] });
+  });
+  document.querySelectorAll('form[action^="{{ url_for('archive_entry', entry_id=0)[:-1] }}"]').forEach(function(form){
+    form.addEventListener('submit', function(e){ if(!confirm("Archive this slip? It will move to the Archive.")) e.preventDefault(); });
+  });
+  function confirmConvert(){ return confirm("Convert this yellow slip to a pink slip? Parents will be notified."); }
+</script>
 {% endblock %}

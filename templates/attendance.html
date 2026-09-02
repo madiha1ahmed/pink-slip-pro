@@ -1,0 +1,84 @@
+{% extends 'base.html' %}
+{% block title %}Attendance · Al-Mahdi{% endblock %}
+
+{% block content %}
+<style>
+  .att-head{ display:flex; align-items:flex-end; justify-content:space-between; gap:1rem; flex-wrap:wrap; }
+  .att-controls{ display:flex; gap:.6rem; align-items:end; flex-wrap:wrap; }
+  .att-row{ display:grid; grid-template-columns:1.4fr auto 1fr; gap:1rem; align-items:center;
+    padding:.7rem 1rem; border-bottom:1px solid var(--line); }
+  .att-row:last-child{ border-bottom:0; }
+  .att-name{ font-weight:600; color:var(--ink); }
+  .att-name small{ display:block; font-weight:400; color:var(--ink-faint); font-size:.78rem; }
+  .seg{ display:inline-flex; border:1px solid var(--line-2); border-radius:999px; overflow:hidden; background:#fff; }
+  .seg label{ margin:0; cursor:pointer; }
+  .seg label span{ display:inline-block; padding:.4rem .85rem; font-size:.82rem; font-weight:600; color:var(--ink-soft); transition:.15s; }
+  .seg input{ position:absolute; opacity:0; width:0; height:0; }
+  .seg input:checked + span.present{ background:var(--emerald); color:#fff; }
+  .seg input:checked + span.late{ background:var(--amber); color:#fff; }
+  .seg input:checked + span.absent{ background:var(--rose); color:#fff; }
+  .att-note input{ width:100%; }
+  @media (max-width:680px){ .att-row{ grid-template-columns:1fr; gap:.5rem; } }
+</style>
+
+<div class="page-head att-head">
+  <div>
+    <span class="eyebrow">Attendance</span>
+    <h2>Record attendance</h2>
+    <p>Mark late arrivals and absences. Parents are notified by email{% if true %} &amp; SMS{% endif %} automatically.</p>
+  </div>
+  <a href="{{ url_for('attendance_insights') }}" class="btn btn-outline">View insights</a>
+</div>
+
+{% if no_homeroom %}
+  <div class="surface" style="text-align:center; padding:2.5rem;">
+    <h3 style="font-family:var(--font-display);">Attendance is for homeroom teachers</h3>
+    <p class="muted">Your account isn't set as a homeroom teacher for any grade, so there's no class roster to take attendance for. If this is wrong, update your grades on the registration page or ask the office.</p>
+  </div>
+{% else %}
+<form method="POST" action="{{ url_for('attendance') }}">
+  <div class="surface" style="margin-bottom:1rem;">
+    <div class="att-controls">
+      <div class="form-group" style="margin:0;">
+        <label for="date">Date</label>
+        <input type="date" id="date" name="date" value="{{ selected_date }}" max="{{ today }}" class="form-control"
+               onchange="this.form.method='get'; this.form.submit();">
+      </div>
+      <div style="flex:1;"></div>
+      <button type="button" class="btn btn-outline" onclick="setAll('present')">All present</button>
+    </div>
+  </div>
+
+  <div class="ledger">
+    <div class="att-row" style="background:var(--rose-soft); font-weight:700; text-transform:uppercase; font-size:.72rem; letter-spacing:.05em; color:var(--rose-deep);">
+      <div>Student</div><div>Status</div><div>Note (optional)</div>
+    </div>
+    {% for s in students %}
+    <div class="att-row">
+      <div class="att-name">{{ s.name }}<small>Grade {{ s.grade }}</small></div>
+      <div class="seg" role="radiogroup" aria-label="Status for {{ s.name }}">
+        <label><input type="radio" name="status_{{ s.id }}" value="present" {% if existing.get(s.name) is none %}checked{% endif %}><span class="present">Present</span></label>
+        <label><input type="radio" name="status_{{ s.id }}" value="late" {% if existing.get(s.name)=='Late' %}checked{% endif %}><span class="late">Late</span></label>
+        <label><input type="radio" name="status_{{ s.id }}" value="absent" {% if existing.get(s.name)=='Absent' %}checked{% endif %}><span class="absent">Absent</span></label>
+      </div>
+      <div class="att-note"><input type="text" name="note_{{ s.id }}" class="form-control" placeholder="e.g. doctor's appointment"></div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div style="margin-top:1.2rem; display:flex; gap:.7rem;">
+    <button type="submit" class="btn btn-primary btn-lg">Save attendance &amp; notify parents</button>
+    <a href="{{ url_for('attendance_log') }}" class="btn btn-outline btn-lg">View log</a>
+  </div>
+  <p class="form-help" style="margin-top:.6rem;">Only students marked <strong>Late</strong> or <strong>Absent</strong> generate a slip and a parent notification. Present students are not recorded.</p>
+</form>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function setAll(val){
+    document.querySelectorAll('input[type=radio][value="'+val+'"]').forEach(function(r){ r.checked = true; });
+  }
+</script>
+{% endblock %}

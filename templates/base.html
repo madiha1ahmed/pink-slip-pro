@@ -4,82 +4,96 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Al-Mahdi Institute's PinkSlip Pro{% endblock %}</title>
-    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <title>{% block title %}PinkSlip Pro · Al-Mahdi Learning Institute{% endblock %}</title>
 
-    <!-- DataTables CSS -->
+    <!-- Bootstrap kept for backward-compatible pages -->
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.datatables.net/1.13.5/css/jquery.dataTables.min.css">
+    <!-- Al-Mahdi design system (loaded last so it wins) -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/almahdi.css') }}">
 
     <style>
-        .report-content table {
-          width: 100%;
-          border-collapse: collapse;
-          margin-top: 1rem;
-        }
-        .report-content th, .report-content td {
-          padding: 8px 12px;
-          border: 1px solid #ccc;
-          text-align: left;
-        }
-        .report-content th {
-          background-color: #f0f8ff;
-          font-weight: bold;
-        }
-        .report-content strong {
-          font-size: 1.1em;
-          display: block;
-          margin: 1.5em 0 0.5em;
-        }
-      </style>
-      
-      
+        .report-content table{ width:100%; border-collapse:collapse; margin-top:1rem; }
+        .report-content th,.report-content td{ padding:8px 12px; border:1px solid var(--line,#ccc); text-align:left; }
+        .report-content th{ background:var(--rose-soft,#f0f8ff); font-weight:bold; }
+        .report-content strong{ font-size:1.1em; display:block; margin:1.5em 0 .5em; }
+    </style>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <!-- Correct jQuery -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <!-- DataTables JS -->
     <script src="https://cdn.datatables.net/1.13.5/js/jquery.dataTables.min.js"></script>
 </head>
 
 <body>
-    <header class="bg-info text-white text-center py-3 mb-4">
-        <h1>PinkSlip Pro Dashboard</h1>
-        <nav>
-            <ul class="nav justify-content-center">
+    <header class="site-header">
+        <div class="bar">
+            <a class="brand" href="{{ url_for('index') }}">
+                <img class="brand__logo" src="{{ url_for('static', filename='images/al-mahdi-logo.jpeg') }}" alt="Al-Mahdi Learning Institute logo">
+                <span>
+                    <span class="brand__name">PinkSlip&nbsp;Pro</span>
+                    <span class="brand__sub">Al-Mahdi Learning Institute</span>
+                </span>
+            </a>
+
+            <button class="nav-toggle" aria-label="Menu" aria-expanded="false" onclick="var n=document.getElementById('nav'); n.classList.toggle('open'); this.setAttribute('aria-expanded', n.classList.contains('open'));">☰</button>
+
+            <nav id="nav" class="mainnav">
                 {% if 'teacher_email' in session %}
-                <li class="nav-item"><a class="nav-link text-white" href="{{ url_for('index') }}">Home</a></li>
-                <li class="nav-item"><a class="nav-link text-white" href="{{ url_for('form') }}">Enter Missing
-                        Homework</a></li>
-                <li class="nav-item"><a class="nav-link text-white" href="{{ url_for('dashboard') }}">Dashboard</a></li>
-                <li class="nav-item"><a class="nav-link text-white" href="{{ url_for('archive') }}">Archive</a></li>
-                <li class="nav-item"><a class="nav-link text-white" href="{{ url_for('insights') }}">Insights</a></li>
+                <a href="{{ url_for('index') }}">Home</a>
+                <a href="{{ url_for('dashboard') }}">PinkSlip Pro</a>
+                <a href="{{ url_for('form') }}">Assign slip</a>
+                <a href="{{ url_for('attendance') }}">Attendance</a>
+                <a href="{{ url_for('insights') }}">Insights</a>
+                <a href="{{ url_for('archive') }}">Archive</a>
+                <a href="{{ url_for('student_of_the_month') }}">Student of the Month</a>
 
-                <li class="nav-item"><a class="nav-link text-white" href="{{ url_for('evaluate_students') }}">Evaluate Students</a></li>
-                <li class="nav-item"><a class="nav-link text-white" href="{{ url_for('view_evaluations') }}">View Evaluations</a></li>
-                <!--<li class="nav-item"><a class="nav-link text-white" href="{{ url_for('generate_report') }}">AI Report</a></li>-->
+                <span class="bell-wrap">
+                  <a href="{{ url_for('notifications') }}" class="bell" title="Notifications" onclick="var d=document.getElementById('bellDrop'); if(d){d.classList.toggle('open'); event.preventDefault();}">
+                    🔔{% if nav_unread and nav_unread > 0 %}<span class="bell__count">{{ nav_unread }}</span>{% endif %}
+                  </a>
+                  <div id="bellDrop" class="bell-drop">
+                    <div class="bell-drop__head">
+                      <strong>Notifications</strong>
+                      {% if nav_unread and nav_unread > 0 %}
+                      <form method="POST" action="{{ url_for('mark_all_read') }}" style="margin:0;">
+                        <button type="submit" class="bell-drop__clear">Mark all read</button>
+                      </form>
+                      {% endif %}
+                    </div>
+                    {% if nav_recent %}
+                      {% for n in nav_recent %}
+                      <a class="bell-item {% if not n.is_read %}unread{% endif %}" href="{{ n.link or url_for('notifications') }}">
+                        <span class="bell-item__dot {{ n.category }}"></span>
+                        <span>
+                          <span class="bell-item__msg">{{ n.message }}</span>
+                          <span class="bell-item__time">{{ n.created_at.strftime('%b %d') }}</span>
+                        </span>
+                      </a>
+                      {% endfor %}
+                      <a class="bell-drop__all" href="{{ url_for('notifications') }}">View all →</a>
+                    {% else %}
+                      <div class="bell-empty">You're all caught up ✨</div>
+                    {% endif %}
+                  </div>
+                </span>
 
-
-                <li class="nav-item"><a class="nav-link text-white" href="{{ url_for('logout') }}">Logout</a></li>
+                <a href="{{ url_for('logout') }}">Log out</a>
                 {% else %}
-                <li class="nav-item"><a class="nav-link text-white" href="{{ url_for('login') }}">Login</a></li>
+                <a href="{{ url_for('login') }}">Log in</a>
+                <a href="{{ url_for('register') }}" class="active">Register</a>
                 {% endif %}
-            </ul>
-        </nav>
+            </nav>
+        </div>
     </header>
 
-    <!-- Flash Messages Section (Place here) -->
-    <div class="container">
+    <div class="container" style="max-width:1160px;">
         {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
         <div class="mt-3">
             {% for category, message in messages %}
             <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
                 {{ message }}
-                <button type="button" class="close" data-dismiss="alert" aria-label="Close">
-                    <span aria-hidden="true">&times;</span>
-                </button>
+                <button type="button" class="close" data-dismiss="alert" aria-label="Close"><span aria-hidden="true">&times;</span></button>
             </div>
             {% endfor %}
         </div>
@@ -87,15 +101,31 @@
         {% endwith %}
     </div>
 
-
-    <main class="container">
+    <main class="container" style="max-width:1160px;">
         {% block content %}{% endblock %}
     </main>
-    <footer class="bg-info text-white text-center py-3 mt-4">
-        <p>&copy; PinkSlip Pro Dashboard</p>
+
+    <footer class="site-footer">
+        <div class="bar">
+            <span>
+                <strong style="font-family:var(--font-display);">PinkSlip Pro</strong>
+                <small> — a gift to the teachers of Al-Mahdi Learning Institute.</small>
+            </span>
+            <small>Built with care · {{ now_year if now_year else 2026 }}</small>
+        </div>
     </footer>
+
     <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.9.2/dist/umd/popper.min.js"></script>
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script>
+      // mark active nav item
+      (function(){
+        var path = window.location.pathname;
+        document.querySelectorAll('.mainnav a').forEach(function(a){
+          if(a.getAttribute('href') === path){ a.classList.add('active'); }
+        });
+      })();
+    </script>
+    {% block scripts %}{% endblock %}
 </body>
-
 </html>

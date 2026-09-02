@@ -1,60 +1,56 @@
 {% extends 'base.html' %}
-
-{% block title %}Archived PinkSlips{% endblock %}
+{% block title %}Archive · PinkSlip Pro{% endblock %}
 
 {% block content %}
-<div id="archive-table">
-  
-
-  <h3>Archived PinkSlip Database</h3>
-  {% if teacher_name %}
-  <p class="text-primary font-weight-bold">👋 Welcome, {{ teacher_name }}!</p>
-{% endif %}
-
+<div class="page-head">
+  <div>
+    <span class="eyebrow">Archived slips</span>
+    <h2>{% if teacher_name %}{{ teacher_name }}’s archive{% else %}Archive{% endif %}</h2>
+    <p>Slips that have been resolved or aged out. Kept for your records.</p>
+  </div>
   {% if homeroom_grades %}
-  <p class="text-success font-weight-bold">
-    🏠 You are a homeroom teacher for Grade {{ homeroom_grades | join(", ") }}
-  </p>
-{% else %}
-  <!-- Nothing shown — not a homeroom teacher -->
-{% endif %}
-<p class="text-info font-weight-bold">
-  👩‍🏫 You are viewing the slips you personally assigned.
-</p>
-  <table id="archiveTable" class="table table-bordered">
+    <span class="chip">🏠 Homeroom · Grade {{ homeroom_grades | join(", ") }}</span>
+  {% endif %}
+</div>
+
+<div class="ledger">
+  <table id="archiveTable" class="table" style="width:100%;">
     <thead>
       <tr>
         <th>Date</th>
-        <th>Type of Slip</th>
-        <th>Student Name</th>
+        <th>Slip</th>
+        <th>Student</th>
         <th>Grade</th>
         <th>Subject</th>
-        <th>Homework Description</th>
-
+        <th>Homework</th>
       </tr>
     </thead>
     <tbody>
       {% for entry in archived_data %}
       <tr>
-        <td>{{ entry.date.strftime('%Y-%m-%d') }}</td>
-        <td>{{ entry.slip_type }}</td>
+        <td style="white-space:nowrap;">{{ entry.date.strftime('%Y-%m-%d') }}</td>
+        <td>
+          {% if entry.slip_type == "Yellow Slip" %}
+            <span class="badge-slip yellow">Yellow</span>
+          {% else %}
+            <span class="badge-slip pink">Pink</span>
+          {% endif %}
+        </td>
         <td>{{ entry.student_name }}</td>
         <td>{{ entry.grade_of_student }}</td>
         <td>{{ entry.subject_of_student }}</td>
         <td>{{ entry.homework_desc }}</td>
-
       </tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
+{% endblock %}
 
+{% block scripts %}
 <script>
   $(document).ready(function () {
-    $('#archiveTable').DataTable({
-      "pageLength": 5, // Optional: Set rows per page
-      "searching": true // Enable search box
-    });
+    $('#archiveTable').DataTable({ pageLength: 8, searching: true, order: [[0,'desc']] });
   });
 </script>
 {% endblock %}

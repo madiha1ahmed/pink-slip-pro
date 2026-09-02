@@ -1,94 +1,104 @@
 {% extends 'base.html' %}
-
-{% block title %}Enter Missing Homework Details{% endblock %}
+{% block title %}Assign a slip · PinkSlip Pro{% endblock %}
 
 {% block content %}
-<div class="card mx-auto" style="max-width: 500px;">
-    <div class="card-body">
-        <h2 class="card-title">Enter Missing Homework Details</h2>
-        <form method="POST" action="{{ url_for('form') }}">
-            {{ form.hidden_tag() }} <!-- CSRF token -->
-
-            <!-- Date Field -->
-            <div class="form-group">
-                {{ form.date.label(class="form-label") }}
-                {{ form.date(class="form-control") }}
-            </div>
-
-            <!-- Slip Type -->
-            <div class="form-group">
-                {{ form.slip_type.label(class="form-label") }}
-                {{ form.slip_type(class="form-control") }}
-            </div>
-
-            <!-- Grade Field -->
-            <div class="form-group">
-                {{ form.grade_of_student.label(class="form-label") }}
-                {{ form.grade_of_student(class="form-control", id="grade") }}
-            </div>
-
-            <!-- Student Field -->
-            <div class="form-group">
-                <label for="student_name">Student Name</label>
-                <select id="student_name" name="student_name" class="form-control" required>
-                    <option value="" disabled selected>Select Student</option>
-                </select>
-            </div>
-
-            <!-- Subject Field (Dynamically updated) -->
-            <div class="form-group">
-                {{ form.subject_of_student.label(class="form-label") }}
-                <select id="subject" name="subject_of_student" class="form-control" required>
-                    <option value="" disabled selected>Select Subject</option>
-                </select>
-            </div>
-
-            <!-- Homework Description -->
-            <div class="form-group">
-                {{ form.homework_desc.label(class="form-label") }}
-                {{ form.homework_desc(class="form-control", required=True) }}
-            </div>
-
-            <!-- Submit Button -->
-            {{ form.submit(class="btn btn-info btn-block") }}
-        </form>
+<div class="auth-narrow" style="max-width:560px;">
+  <div class="page-head">
+    <div>
+      <span class="eyebrow">New slip</span>
+      <h2>Assign a homework slip</h2>
+      <p>Pink for a missed assignment · Yellow when there’s a valid reason.</p>
     </div>
+  </div>
+
+  <div class="slip slip--pink" id="slipCard">
+    <form method="POST" action="{{ url_for('form') }}">
+      {{ form.hidden_tag() }}
+
+      <div class="form-group">
+        {{ form.date.label(class="form-label") }}
+        {{ form.date(class="form-control") }}
+      </div>
+
+      <div class="form-group">
+        {{ form.slip_type.label(class="form-label") }}
+        {{ form.slip_type(class="form-control") }}
+      </div>
+
+      <div class="form-group">
+        {{ form.grade_of_student.label(class="form-label") }}
+        {{ form.grade_of_student(class="form-control", id="grade") }}
+      </div>
+
+      <div class="form-group">
+        <label for="student_name">Student</label>
+        <select id="student_name" name="student_name" class="form-control" required>
+          <option value="" disabled selected>Select student</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        {{ form.subject_of_student.label(class="form-label") }}
+        <select id="subject" name="subject_of_student" class="form-control" required>
+          <option value="" disabled selected>Select subject</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        {{ form.homework_desc.label(class="form-label") }}
+        {{ form.homework_desc(class="form-control", required=True, placeholder="e.g. Chapter 4 practice questions") }}
+      </div>
+
+      <div class="form-group" id="rescheduleWrap" style="display:none;">
+        <label for="reschedule_date" class="form-label">Rescheduled due date <span class="muted" style="font-weight:400;">(yellow slip)</span></label>
+        <input type="date" name="reschedule_date" id="reschedule_date" class="form-control">
+        <div class="form-help">The student must show the homework by this date. You'll get a reminder (dashboard, email &amp; SMS) that day.</div>
+      </div>
+
+      {{ form.submit(class="btn btn-primary btn-block btn-lg") }}
+    </form>
+  </div>
 </div>
+{% endblock %}
 
-<!-- JavaScript for Dynamic Dropdowns -->
+{% block scripts %}
 <script>
-    const gradeSubjectMapping = {{ grade_subject_mapping | tojson | safe }} || {};
+  const gradeSubjectMapping = {{ grade_subject_mapping | tojson | safe }} || {};
 
-    $(document).ready(function () {
-        $('#grade').change(function () {
-            const selectedGrade = $(this).val();
+  // Show the reschedule-date field only for Yellow Slips
+  function toggleReschedule(){
+    const st = document.getElementById('slip_type');
+    const wrap = document.getElementById('rescheduleWrap');
+    const card = document.getElementById('slipCard');
+    const btn = document.querySelector('[name="submit"], button[type="submit"], input[type="submit"]');
+    if(!st) return;
+    const isYellow = /yellow/i.test(st.value || '');
+    if(wrap){ wrap.style.display = isYellow ? 'block' : 'none'; if(!isYellow){ const rd=document.getElementById('reschedule_date'); if(rd) rd.value=''; } }
+    if(card){ card.classList.toggle('slip--yellow', isYellow); card.classList.toggle('slip--pink', !isYellow); }
+    if(btn){ const label = isYellow ? 'Assign Yellow Slip' : (st.value ? 'Assign Pink Slip' : 'Assign slip');
+             if(btn.tagName==='INPUT') btn.value = label; else btn.textContent = label; }
+  }
 
-            // Fetch students dynamically
-            $.ajax({
-                url: `/get_students/${selectedGrade}`,
-                method: 'GET',
-                success: function (response) {
-                    $('#student_name').empty();
-                    $('#student_name').append('<option value="" disabled selected>Select Student</option>');
-                    response.students.forEach(student => {
-                        $('#student_name').append(`<option value="${student}">${student}</option>`);
-                    });
-                },
-                error: function () {
-                    alert('Failed to fetch students. Please try again.');
-                }
-            });
+  $(document).ready(function () {
+    // tag the slip_type select so we can find it
+    const stField = document.querySelector('[name="slip_type"]');
+    if(stField){ stField.id = 'slip_type'; stField.addEventListener('change', toggleReschedule); toggleReschedule(); }
 
-            // Update Subject Dropdown based on selected grade
-            $('#subject').empty();
-            $('#subject').append('<option value="" disabled selected>Select Subject</option>');
-            if (gradeSubjectMapping[selectedGrade]) {
-                gradeSubjectMapping[selectedGrade].forEach(subject => {
-                    $('#subject').append(`<option value="${subject}">${subject}</option>`);
-                });
-            }
-        });
+    $('#grade').change(function () {
+      const selectedGrade = $(this).val();
+      $.ajax({
+        url: `/get_students/${selectedGrade}`, method: 'GET',
+        success: function (response) {
+          $('#student_name').empty().append('<option value="" disabled selected>Select student</option>');
+          response.students.forEach(s => $('#student_name').append(`<option value="${s}">${s}</option>`));
+        },
+        error: function () { alert('Could not load students for that grade. Please try again.'); }
+      });
+      $('#subject').empty().append('<option value="" disabled selected>Select subject</option>');
+      if (gradeSubjectMapping[selectedGrade]) {
+        gradeSubjectMapping[selectedGrade].forEach(sub => $('#subject').append(`<option value="${sub}">${sub}</option>`));
+      }
     });
+  });
 </script>
-
 {% endblock %}

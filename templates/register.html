@@ -1,0 +1,77 @@
+{% extends 'base.html' %}
+{% block title %}Register · PinkSlip Pro{% endblock %}
+
+{% block content %}
+<div class="auth-narrow" style="max-width:760px;">
+  <div class="page-head">
+    <div>
+      <span class="eyebrow">Join the staff roster</span>
+      <h2>Create your teacher account</h2>
+      <p>Tell us what you teach so PinkSlip Pro only ever shows you the right students and subjects.</p>
+    </div>
+  </div>
+
+  <form method="POST" action="{{ url_for('register') }}" class="surface">
+    <div class="row">
+      <div class="col-md-6 form-group">
+        <label for="name">Full name</label>
+        <input type="text" name="name" id="name" class="form-control" placeholder="e.g. Fatme Jaffal" required>
+      </div>
+      <div class="col-md-6 form-group">
+        <label for="email">School email</label>
+        <input type="email" name="email" id="email" class="form-control" placeholder="you@almahdilearninginstitute.ca" required>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="col-md-6 form-group">
+        <label for="phone">Mobile number <span class="muted" style="font-weight:400;">(for SMS alerts)</span></label>
+        <input type="tel" name="phone" id="phone" class="form-control" placeholder="+1 905 555 1234">
+        <div class="form-help">Used to text you homework and Student-of-the-Month reminders. Include the country code (+1 for Canada).</div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="col-md-6 form-group">
+        <label for="password">Password</label>
+        <input type="password" name="password" id="password" class="form-control" placeholder="At least 8 characters" minlength="8" required>
+      </div>
+      <div class="col-md-6 form-group">
+        <label for="confirm">Confirm password</label>
+        <input type="password" name="confirm" id="confirm" class="form-control" placeholder="Re-enter your password" minlength="8" required>
+      </div>
+    </div>
+
+    <hr style="border-color:var(--line); margin:1.4rem 0;">
+
+    <div class="form-group">
+      <label>What do you teach?</label>
+      <p class="form-help" style="margin-top:0;">Tick the subjects you teach in each grade. Mark a grade as
+        <span class="hr-grade">Homeroom</span> if you are its homeroom teacher — homeroom teachers can see every slip for that grade.</p>
+
+      <div class="matrix">
+        {% set grades = ['JK','SK',1,2,3,4,5,6,7,8] %}
+        {% set subjects = ['Math','Science','English','Social','French','Arabic','Islamic Studies','Quran','Art','Gym'] %}
+        {% for g in grades %}
+        <div class="cell">
+          <h5>
+            <span>Grade {{ g }}</span>
+            <label class="hr-grade" style="font-weight:700; cursor:pointer;">
+              <input type="checkbox" name="homeroom" value="{{ g }}" style="accent-color:var(--emerald);"> HR
+            </label>
+          </h5>
+          <div class="subj">
+            {% for s in subjects %}
+            <label><input type="checkbox" name="teach_{{ g }}" value="{{ s }}"> {{ s }}</label>
+            {% endfor %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <button type="submit" class="btn btn-primary btn-lg btn-block" style="margin-top:.5rem;">Create account</button>
+    <p class="form-help mt-3 text-center">Already registered? <a href="{{ url_for('login') }}">Log in instead</a>.</p>
+  </form>
+</div>
+{% endblock %}

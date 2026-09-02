@@ -1,0 +1,51 @@
+# Render Blueprint — provisions the web service + PostgreSQL together.
+# You can either use this file (Render → New → Blueprint) OR follow the
+# manual dashboard steps in DEPLOY_RENDER.md. Either works.
+
+databases:
+  - name: pinkslip-db
+    plan: basic-256mb          # ~$6/mo tier
+    region: ohio               # closest to Niagara Falls; keep web + db in the SAME region
+
+services:
+  - type: web
+    name: pinkslip-pro
+    runtime: python
+    plan: starter              # $7/mo tier
+    region: ohio
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "gunicorn app:app --bind 0.0.0.0:$PORT --timeout 120 --workers 2"
+    healthCheckPath: /
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: pinkslip-db
+          property: connectionString
+      # Secrets below are marked sync:false — set their real values in the
+      # Render dashboard (Environment tab). Never commit real secrets.
+      - key: SECRET_KEY
+        generateValue: true    # Render creates a strong random value for you
+      - key: TASK_KEY
+        generateValue: true
+      - key: MAIL_USERNAME
+        sync: false
+      - key: MAIL_PASSWORD
+        sync: false
+      - key: NOTIFY_CHANNEL
+        value: email_sms
+      - key: SMS_PROVIDER
+        value: clicksend
+      - key: SMS_FROM
+        sync: false
+      - key: CLICKSEND_USERNAME
+        sync: false
+      - key: CLICKSEND_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: PRINCIPAL_EMAIL
+        sync: false
+      - key: VICE_PRINCIPAL_EMAIL
+        value: malasam@almahdilearninginstitute.ca
+      - key: SECRETARY_EMAIL
+        sync: false

@@ -1,0 +1,3 @@
+# Add these to your requirements.txt (reportlab is already there):
+psycopg2-binary        # Postgres driver for Render
+pypdf                  # stamps names onto blank certificate PDFs

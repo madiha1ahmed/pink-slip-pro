@@ -1,5 +1,5 @@
 import pandas as pd
-from app_old import db1, Subject  # Import db and Student model from your app
+from app import db, Subject  # Import db and Student model from your app
 
 # Path to your Excel file
 file_path = "subjects.xlsx"

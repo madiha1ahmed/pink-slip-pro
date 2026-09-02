@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+{% block title %}Notifications · PinkSlip Pro{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <span class="eyebrow">Alerts</span>
+    <h2>Your notifications</h2>
+    <p>Homework due dates and Student-of-the-Month reminders land here.</p>
+  </div>
+  {% if items %}
+  <form method="POST" action="{{ url_for('mark_all_read') }}" style="margin:0;">
+    <button class="btn btn-outline" type="submit">Mark all read</button>
+  </form>
+  {% endif %}
+</div>
+
+{% if items %}
+<div class="ledger" style="padding:.4rem;">
+  {% for n in items %}
+  <div style="display:flex; align-items:flex-start; gap:.8rem; padding:.9rem 1rem; border-bottom:1px solid var(--line); {% if not n.is_read %}background:#FFF7FA;{% endif %}">
+    <span class="bell-item__dot {{ n.category }}" style="margin-top:.5rem;"></span>
+    <div style="flex:1;">
+      <div style="font-weight:{% if not n.is_read %}600{% else %}500{% endif %}; color:var(--ink);">
+        {% if n.link %}<a href="{{ n.link }}">{{ n.message }}</a>{% else %}{{ n.message }}{% endif %}
+      </div>
+      <div style="font-size:.78rem; color:var(--ink-faint); margin-top:.15rem;">{{ n.created_at.strftime('%B %d, %Y · %I:%M %p') }}</div>
+    </div>
+    {% if not n.is_read %}
+    <form method="POST" action="{{ url_for('mark_notification_read', note_id=n.id) }}" style="margin:0;">
+      <button class="btn btn-outline btn-sm" type="submit">Mark read</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-state" style="text-align:center; padding:3rem; border:1px dashed var(--line-2); border-radius:16px; color:var(--ink-soft);">
+  <h3 style="font-family:var(--font-display);">You're all caught up ✨</h3>
+  <p>New reminders will appear here as they come in.</p>
+</div>
+{% endif %}
+{% endblock %}

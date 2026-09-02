@@ -1,0 +1,116 @@
+{% extends 'base.html' %}
+{% block title %}Attendance insights · Al-Mahdi{% endblock %}
+
+{% block content %}
+<style>
+  .ins{ --r:#C13567; --a:#E9A23B; --e:#1E8E6A; --ink:#201B24; --soft:#5A5560; --faint:#8A848F; --line:#EDE4E0; }
+  .ins__overview{ display:grid; grid-template-columns:1.3fr 1fr; gap:1rem; margin-bottom:1.1rem; }
+  @media (max-width:820px){ .ins__overview{ grid-template-columns:1fr; } }
+  .ins__panel{ background:#fff; border:1px solid var(--line); border-radius:16px; box-shadow:0 1px 2px rgba(32,27,36,.05); padding:1.25rem 1.35rem; display:flex; flex-direction:column; }
+  .ins__panel h4{ font-family:'Fraunces',Georgia,serif; font-size:1.05rem; margin:0; color:var(--ink); }
+  .ins__panel .sub{ font-size:.82rem; color:var(--soft); margin:.15rem 0 .9rem; }
+  .ins__tiles{ display:grid; grid-template-columns:1fr 1fr; gap:.7rem; align-content:start; }
+  .tile{ position:relative; background:#FBF7F5; border:1px solid var(--line); border-radius:12px; padding:.85rem .95rem .8rem 1.05rem; overflow:hidden; }
+  .tile::before{ content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--ink); }
+  .tile.r::before{ background:var(--r); } .tile.a::before{ background:var(--a); } .tile.e::before{ background:var(--e); }
+  .tile .num{ font-family:'Fraunces',Georgia,serif; font-size:1.9rem; font-weight:600; line-height:1; color:var(--ink); }
+  .tile .lbl{ font-size:.72rem; letter-spacing:.09em; text-transform:uppercase; color:var(--faint); font-weight:600; margin-top:.35rem; }
+  .tile .hint{ font-size:.76rem; color:var(--soft); margin-top:.1rem; }
+  .ins__canvas{ position:relative; flex:1; min-height:240px; }
+  .ins__grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:1rem; }
+  .ins__full{ grid-column:1 / -1; } .ins__full .ins__canvas{ min-height:320px; }
+  .ins__empty{ text-align:center; padding:3.5rem 1.5rem; background:#fff; border:1px dashed #E3D8D3; border-radius:16px; color:var(--soft); }
+  .ins__empty h3{ font-family:'Fraunces',Georgia,serif; color:var(--ink); margin:.6rem 0 .4rem; }
+</style>
+
+<div class="page-head">
+  <div>
+    <span class="eyebrow">Attendance analytics</span>
+    <h2>Attendance insights</h2>
+    <p>Lateness and absence patterns across your homeroom — so you can follow up early.</p>
+  </div>
+  <a href="{{ url_for('attendance') }}" class="btn btn-primary">Record attendance</a>
+</div>
+
+<div class="ins">
+{% if total == 0 %}
+  <div class="ins__empty">
+    <h3>No attendance data yet</h3>
+    <p>Once you record late arrivals and absences, this page fills with trends and per-student breakdowns.</p>
+    <a href="{{ url_for('attendance') }}" class="btn btn-primary mt-2">Record attendance</a>
+  </div>
+{% else %}
+  <div class="ins__overview">
+    <div class="ins__panel">
+      <h4>At a glance</h4><div class="sub">Totals so far</div>
+      <div class="ins__tiles">
+        <div class="tile"><div class="num">{{ total }}</div><div class="lbl">Total slips</div><div class="hint">late + absent</div></div>
+        <div class="tile a"><div class="num">{{ counts_by_type.get('Late', 0) }}</div><div class="lbl">Late</div><div class="hint">arrivals</div></div>
+        <div class="tile r"><div class="num">{{ counts_by_type.get('Absent', 0) }}</div><div class="lbl">Absent</div><div class="hint">days missed</div></div>
+        <div class="tile e"><div class="num">{{ students_flagged }}</div><div class="lbl">Students</div><div class="hint">with a slip</div></div>
+      </div>
+    </div>
+    <div class="ins__panel">
+      <h4>Late vs. absent</h4><div class="sub">The mix</div>
+      <div class="ins__canvas"><canvas id="attPie"></canvas></div>
+    </div>
+  </div>
+
+  <div class="ins__grid">
+    <div class="ins__panel">
+      <h4>Trend over time</h4><div class="sub">By month — is it improving?</div>
+      <div class="ins__canvas"><canvas id="attTrend"></canvas></div>
+    </div>
+    <div class="ins__panel ins__full">
+      <h4>Who's most affected</h4><div class="sub">Sorted by total — late and absent stacked</div>
+      <div class="ins__canvas"><canvas id="attPerStudent"></canvas></div>
+    </div>
+  </div>
+{% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% if total and total > 0 %}
+<script>
+  const C = { rose:'#C13567', roseSoft:'rgba(193,53,103,.14)', amber:'#E9A23B', amberSoft:'rgba(233,162,59,.16)', ink:'#201B24', line:'#EDE4E0', faint:'#8A848F' };
+  Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
+  Chart.defaults.color = C.faint; Chart.defaults.maintainAspectRatio = false;
+  Chart.defaults.plugins.legend.labels.usePointStyle = true; Chart.defaults.plugins.legend.labels.boxWidth = 8;
+  const grid = { grid:{ color:C.line, drawBorder:false }, ticks:{ color:C.faint } };
+
+  const counts = {{ counts_by_type | tojson }};
+  const labels = Object.keys(counts);
+  const colorFor = l => /absent/i.test(l) ? C.rose : C.amber;
+  new Chart(document.getElementById('attPie'), {
+    type:'doughnut',
+    data:{ labels:labels, datasets:[{ data:Object.values(counts), backgroundColor:labels.map(colorFor), borderColor:'#fff', borderWidth:3, hoverOffset:6 }] },
+    options:{ cutout:'62%', plugins:{ legend:{ position:'bottom' } } }
+  });
+
+  const over = {{ over_time | tojson }};
+  const months = Object.keys(over);
+  const fmt = m => { const p=m.split('-'); return new Date(p[0],p[1]-1).toLocaleString('en',{month:'short',year:'2-digit'}); };
+  new Chart(document.getElementById('attTrend'), {
+    type:'line',
+    data:{ labels:months.map(fmt), datasets:[
+      { label:'Late', data:months.map(m=>over[m]['Late']||0), borderColor:C.amber, backgroundColor:C.amberSoft, fill:true, tension:.35, pointRadius:3 },
+      { label:'Absent', data:months.map(m=>over[m]['Absent']||0), borderColor:C.rose, backgroundColor:C.roseSoft, fill:true, tension:.35, pointRadius:3 }
+    ]},
+    options:{ plugins:{ legend:{ position:'bottom' } }, scales:{ x:grid, y:{ grid:grid.grid, ticks:{ color:C.faint, precision:0 }, beginAtZero:true } } }
+  });
+
+  const per = {{ per_student | tojson }};
+  const names = Object.keys(per).sort((a,b)=>((per[b].Late+per[b].Absent)-(per[a].Late+per[a].Absent)));
+  new Chart(document.getElementById('attPerStudent'), {
+    type:'bar',
+    data:{ labels:names, datasets:[
+      { label:'Late', data:names.map(n=>per[n].Late||0), backgroundColor:C.amber, borderRadius:4, stack:'s' },
+      { label:'Absent', data:names.map(n=>per[n].Absent||0), backgroundColor:C.rose, borderRadius:4, stack:'s' }
+    ]},
+    options:{ indexAxis:'y', plugins:{ legend:{ position:'bottom' } },
+      scales:{ x:{ grid:grid.grid, stacked:true, beginAtZero:true, ticks:{ color:C.faint, precision:0 } }, y:{ grid:{ display:false }, stacked:true, ticks:{ color:C.ink } } } }
+  });
+</script>
+{% endif %}
+{% endblock %}

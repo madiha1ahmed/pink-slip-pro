@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% block title %}Student of the Month · Al-Mahdi{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <span class="eyebrow">Recognition</span>
+    <h2>Student of the Month</h2>
+    <p>Every teacher rates the students they teach across key learning skills. Scores combine each month to celebrate standout students.</p>
+  </div>
+</div>
+
+<div class="sec-grid" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:1.25rem;">
+  <a class="sec emerald" href="{{ url_for('evaluate_students') }}"
+     style="position:relative; display:flex; flex-direction:column; background:#fff; border:1px solid var(--line); border-radius:18px; padding:1.5rem; text-decoration:none; box-shadow:var(--shadow-sm); overflow:hidden;">
+    <div style="font-size:1.7rem;">📝</div>
+    <h3 style="margin:.6rem 0 .35rem; font-size:1.2rem; color:var(--ink);">Fill in evaluations</h3>
+    <p style="color:var(--ink-soft); font-size:.9rem; margin:0 0 1rem; flex:1;">Rate your students for the month across responsibility, self-regulation, organization, collaboration, and independent work.</p>
+    <span style="font-weight:600; font-size:.9rem; color:var(--rose-deep);">Start rating →</span>
+  </a>
+
+  <a class="sec rose" href="{{ url_for('view_evaluations') }}"
+     style="position:relative; display:flex; flex-direction:column; background:#fff; border:1px solid var(--line); border-radius:18px; padding:1.5rem; text-decoration:none; box-shadow:var(--shadow-sm); overflow:hidden;">
+    <div style="font-size:1.7rem;">📊</div>
+    <h3 style="margin:.6rem 0 .35rem; font-size:1.2rem; color:var(--ink);">View submitted evaluations</h3>
+    <p style="color:var(--ink-soft); font-size:.9rem; margin:0 0 1rem; flex:1;">Review what you've submitted, by month and year, and see the averages you recorded.</p>
+    <span style="font-weight:600; font-size:.9rem; color:var(--rose-deep);">View evaluations →</span>
+  </a>
+</div>
+
+<div class="surface" style="margin-top:1.5rem; background:var(--rose-soft); border-color:var(--rose-edge);">
+  <strong style="font-family:var(--font-display);">Automated reminders are on.</strong>
+  <p class="muted" style="margin:.4rem 0 0;">Teachers are reminded to complete their evaluations on the {{ 23 }}rd, again on the 25th and 26th if outstanding, and on the 27th the vice-principal is copied — by email, SMS, and here on your dashboard.</p>
+</div>
+{% endblock %}

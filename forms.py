@@ -24,4 +24,4 @@ class HealthDataForm(FlaskForm):
         validators=[DataRequired()]
     )
     homework_desc = StringField('Missing Homework Description', validators=[DataRequired()])
-    submit = SubmitField('Assign Pink Slip')
+    submit = SubmitField('Assign slip')

@@ -1,42 +1,63 @@
 {% extends 'base.html' %}
-
-{% block title %}PinkSlip Pro: Home{% endblock %}
+{% block title %}PinkSlip Pro · Al-Mahdi Learning Institute{% endblock %}
 
 {% block content %}
-
-
-<div class="container mb-5">
-<div class="container d-flex flex-wrap justify-content-center align-items-start">
-    <!-- Poster on Left -->
-    <div class="p-2 flex-grow-1 text-center" style="max-width: 400px;">
-        <img src="{{ url_for('static', filename='images/poster.jpg') }}" alt="PinkSlip Pro Poster"
-        img src="{{ url_for('static', filename='images/Pink-slip-workflow.jpg') }}" alt="PinkSlip Pro Workflow"
-            class="img-fluid w-100 shadow" style="max-height: 700px; object-fit: contain;">
+<section class="hero">
+  <div class="hero__grid">
+    <div>
+      <span class="eyebrow">Homework accountability, made kind</span>
+      <h1>Fewer missed assignments. <em>More</em> connected families.</h1>
+      <p class="hero__lead">
+        Assign a slip in seconds and the student's parents hear about it the same day.
+        No paper, no lost notes — just timely, respectful communication between home and school.
+      </p>
+      <div class="hero__cta">
+        {% if 'teacher_email' in session %}
+          <a href="{{ url_for('form') }}" class="btn btn-primary btn-lg">Assign a slip</a>
+          <a href="{{ url_for('dashboard') }}" class="btn btn-outline btn-lg">Open dashboard</a>
+        {% else %}
+          <a href="{{ url_for('register') }}" class="btn btn-primary btn-lg">Create your account</a>
+          <a href="{{ url_for('login') }}" class="btn btn-outline btn-lg">Log in</a>
+        {% endif %}
+      </div>
     </div>
 
-    <div class="p-2 flex-grow-1 text-center" style="max-width: 1000px;">
-        <img src="{{ url_for('static', filename='images/Pink-slip-workflow.jpg') }}" alt="PinkSlip Pro Workflow"
-            class="img-fluid w-100 shadow" style="max-height: 700px; object-fit: contain;">
+    <!-- Signature element: the slip -->
+    <div>
+      <div class="slip slip--pink hero__slip" role="img" aria-label="Example pink slip">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:.8rem;">
+          <span class="slip__tag">● Pink Slip</span>
+          <span class="muted" style="font-size:.8rem;">Missed homework</span>
+        </div>
+        <div class="slip__row"><span>Student</span><span>Student X · Grade 5</span></div>
+        <div class="slip__row"><span>Subject</span><span>Mathematics</span></div>
+        <div class="slip__row"><span>Homework</span><span>Ch. 4 practice set</span></div>
+        <div class="slip__row"><span>Date</span><span>Today</span></div>
+        <div style="margin-top:.9rem; font-size:.82rem; color:var(--rose-deep); font-weight:600;">
+          ✉ Parents notified automatically · teacher CC’d
+        </div>
+      </div>
     </div>
+  </div>
+</section>
 
-
-
-    <!-- Text on Right -->
-    <div class="p-4 flex-grow-1" style="min-width: 300px;">
-        <h3 class="text-info font-weight-bold mb-3">Welcome to PinkSlip Pro</h3>
-        <p class="lead text-left">
-            PinkSlip Pro is a streamlined digital solution for tracking missed homework. 
-            Assign a pink slip when a student misses an assignment, and an email is instantly sent to the parent. 
-            When a student receives three pink slips, an automatic detailed report is sent to both the parent and homeroom teacher. 
-            Each pink slip is also archived two months after it's issued. 
-            No more paper. Better record-keeping. Timely communication.
-        </p>
-        <p class="lead text-left">
-            Every pink slip is archived after two months. Homeroom teachers and assigning teachers are notified when students reach three slips.
-            No more paperwork, no more forgetting. Stay organized and proactive with PinkSlip Pro.
-        </p>
-        <a href="{{ url_for('form') }}" class="btn btn-info btn-lg mt-3">Start Tracking Student Homework</a>
+<section class="steps">
+  <div class="steps__grid">
+    <div class="step">
+      <div class="step__n">1</div>
+      <h4>Assign the slip</h4>
+      <p>Pick the student, subject, and what was missed. Choose a <strong>pink slip</strong> for a missed assignment, or a <strong>yellow slip</strong> when there’s a valid reason.</p>
     </div>
-</div>
-</div>
+    <div class="step">
+      <div class="step__n">2</div>
+      <h4>Families are notified</h4>
+      <p>Parents receive a warm, detailed message the moment a pink slip is issued — by email, and optionally SMS or WhatsApp. The assigning teacher is copied.</p>
+    </div>
+    <div class="step">
+      <div class="step__n">3</div>
+      <h4>It stays organized</h4>
+      <p>A third pink slip escalates to the homeroom teacher, and every slip is archived automatically. Clear records, no paperwork.</p>
+    </div>
+  </div>
+</section>
 {% endblock %}

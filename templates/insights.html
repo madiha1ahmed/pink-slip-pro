@@ -1,139 +1,236 @@
 {% extends 'base.html' %}
-
-{% block title %}Insights Dashboard{% endblock %}
+{% block title %}Insights · PinkSlip Pro{% endblock %}
 
 {% block content %}
-<div class="container my-4">
-  <h2 class="mb-4 text-center">Insights Dashboard</h2>
+<style>
+  /* Self-contained insights styles (fallbacks included so this renders
+     even if almahdi.css is stale/cached). Scoped under .ins. */
+  .ins { --r:#C13567; --a:#E9A23B; --e:#1E8E6A; --ink:#201B24; --soft:#5A5560;
+         --faint:#8A848F; --card:#fff; --line:#EDE4E0; }
+  .ins__overview{ display:grid; grid-template-columns:1.3fr 1fr; gap:1rem; margin-bottom:1.1rem; }
+  @media (max-width:820px){ .ins__overview{ grid-template-columns:1fr; } }
 
-  {% if teacher_name %}
-  <p class="text-primary font-weight-bold text-center">👋 Welcome, {{ teacher_name }}!</p>
-  {% endif %}
+  .ins__panel{ background:var(--card); border:1px solid var(--line); border-radius:16px;
+    box-shadow:0 1px 2px rgba(32,27,36,.05),0 2px 8px rgba(32,27,36,.04); padding:1.25rem 1.35rem;
+    display:flex; flex-direction:column; }
+  .ins__panel h4{ font-family:'Fraunces',Georgia,serif; font-size:1.05rem; margin:0; color:var(--ink); }
+  .ins__panel .sub{ font-size:.82rem; color:var(--soft); margin:.15rem 0 .9rem; }
 
-  <div class="row">
-    <div class="col-md-6 mb-4">
-      <h4 class="text-info">Your Subjects Overview</h4>
-      <canvas id="subjectSlipPie"></canvas>
+  .ins__tiles{ display:grid; grid-template-columns:1fr 1fr; gap:.7rem; align-content:start; }
+  .tile{ position:relative; background:#FBF7F5; border:1px solid var(--line); border-radius:12px;
+    padding:.85rem .95rem .8rem 1.05rem; overflow:hidden; }
+  .tile::before{ content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--ink); }
+  .tile.r::before{ background:var(--r); } .tile.a::before{ background:var(--a); } .tile.e::before{ background:var(--e); }
+  .tile .num{ font-family:'Fraunces',Georgia,serif; font-size:1.9rem; font-weight:600; line-height:1; color:var(--ink); }
+  .tile .lbl{ font-size:.72rem; letter-spacing:.09em; text-transform:uppercase; color:var(--faint);
+    font-weight:600; margin-top:.35rem; }
+  .tile .hint{ font-size:.76rem; color:var(--soft); margin-top:.1rem; }
+
+  .ins__canvas{ position:relative; flex:1; min-height:240px; }
+  .ins__grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:1rem; }
+  .ins__grid .ins__panel .ins__canvas{ min-height:260px; }
+  .ins__full{ grid-column:1 / -1; }
+  .ins__full .ins__canvas{ min-height:320px; }
+
+  .ins__section{ display:flex; align-items:center; gap:.6rem; margin:1.6rem 0 .9rem; }
+  .ins__section h3{ margin:0; font-family:'Fraunces',Georgia,serif; font-size:1.3rem; color:var(--ink); }
+  .ins__section .rule{ flex:1; height:1px; background:#E3D8D3; }
+
+  .ins__empty{ text-align:center; padding:3.5rem 1.5rem; background:var(--card);
+    border:1px dashed #E3D8D3; border-radius:16px; color:var(--soft); }
+  .ins__empty h3{ font-family:'Fraunces',Georgia,serif; color:var(--ink); margin:.6rem 0 .4rem; }
+</style>
+
+<div class="page-head">
+  <div>
+    <span class="eyebrow">Analytics</span>
+    <h2>{% if teacher_name %}{{ teacher_name }}’s insights{% else %}Insights{% endif %}</h2>
+    <p>A read on homework patterns across your classes — so you can step in early.</p>
+  </div>
+  {% if is_homeroom_teacher %}<span class="chip">🏠 Homeroom view included</span>{% endif %}
+</div>
+
+{% set total_pink = slip_counts_by_type.get('Pink Slip', 0) %}
+{% set total_yellow = slip_counts_by_type.get('Yellow Slip', 0) %}
+{% set total_all = total_pink + total_yellow %}
+
+<div class="ins">
+{% if total_all == 0 %}
+  <div class="ins__empty">
+    <h3>Nothing to chart just yet</h3>
+    <p>Once you start assigning slips, this page fills with trends and breakdowns<br>to help you spot which students and subjects need attention.</p>
+    <a href="{{ url_for('form') }}" class="btn btn-primary mt-2">Assign your first slip</a>
+  </div>
+{% else %}
+
+  <!-- Overview: metrics grouped with the slip-mix chart -->
+  <div class="ins__overview">
+    <div class="ins__panel">
+      <h4>At a glance</h4>
+      <div class="sub">Your totals so far</div>
+      <div class="ins__tiles">
+        <div class="tile"><div class="num">{{ total_all }}</div><div class="lbl">Total slips</div><div class="hint">across your classes</div></div>
+        <div class="tile r"><div class="num">{{ total_pink }}</div><div class="lbl">Pink</div><div class="hint">missed homework</div></div>
+        <div class="tile a"><div class="num">{{ total_yellow }}</div><div class="lbl">Yellow</div><div class="hint">excused</div></div>
+        <div class="tile e"><div class="num">{{ slip_counts_by_student | length }}</div><div class="lbl">Students flagged</div><div class="hint">at least one slip</div></div>
+      </div>
+    </div>
+    <div class="ins__panel">
+      <h4>Slip mix</h4>
+      <div class="sub">Pink vs. yellow</div>
+      <div class="ins__canvas"><canvas id="subjectSlipPie"></canvas></div>
     </div>
   </div>
 
-  <div class="row">
-    {% for label, data in slips_per_grade_subject.items() %}
-    <div class="col-md-6 mb-4">
-      <h4 class="text-info">Slips per Student – {{ label }}</h4>
-      <canvas id="stackedSlipBar_{{ loop.index }}"></canvas>
-      <script>
-        const data{{ loop.index }} = {{ data | tojson }};
-        const students{{ loop.index }} = Object.keys(data{{ loop.index }});
-        const pink{{ loop.index }} = students{{ loop.index }}.map(s => data{{ loop.index }}[s]['Pink Slip'] || 0);
-        const yellow{{ loop.index }} = students{{ loop.index }}.map(s => data{{ loop.index }}[s]['Yellow Slip'] || 0);
+  <div class="ins__grid">
+    <div class="ins__panel">
+      <h4>Trend over time</h4>
+      <div class="sub">Slips issued by month — is it improving?</div>
+      <div class="ins__canvas"><canvas id="trendLine"></canvas></div>
+    </div>
+    <div class="ins__panel ins__full">
+      <h4>Who’s accumulating slips</h4>
+      <div class="sub">Sorted by total — pink and yellow stacked</div>
+      <div class="ins__canvas"><canvas id="perStudent"></canvas></div>
+    </div>
+  </div>
 
-        new Chart(document.getElementById('stackedSlipBar_{{ loop.index }}'), {
-          type: 'bar',
-          data: {
-            labels: students{{ loop.index }},
-            datasets: [
-              { label: 'Pink Slip', data: pink{{ loop.index }}, backgroundColor: '#f06292', stack: 'slips' },
-              { label: 'Yellow Slip', data: yellow{{ loop.index }}, backgroundColor: '#ffd54f', stack: 'slips' }
-            ]
-          },
-          options: {
-            responsive: true,
-            scales: {
-              x: { stacked: true, ticks: { maxRotation: 45, minRotation: 30 } },
-              y: { stacked: true, beginAtZero: true }
-            }
-          }
-        });
-      </script>
+  {% if slips_per_grade_subject %}
+  <div class="ins__section"><h3>By class</h3><span class="rule"></span></div>
+  <div class="ins__grid">
+    {% for label, data in slips_per_grade_subject.items() %}
+    <div class="ins__panel">
+      <h4>{{ label }}</h4>
+      <div class="sub">Slips per student in this class</div>
+      <div class="ins__canvas"><canvas id="stackedSlipBar_{{ loop.index }}"></canvas></div>
+      <script>window.__gs = window.__gs || {}; window.__gs["{{ loop.index }}"] = {{ data | tojson }};</script>
     </div>
     {% endfor %}
   </div>
+  {% endif %}
 
   {% if is_homeroom_teacher %}
-  <div class="row mt-4">
-    <div class="col-md-6 mb-4">
-      <h4 class="text-success">Homeroom: Slips per Subject</h4>
-      <canvas id="homeroomSubjectBar"></canvas>
+  <div class="ins__section"><h3>Homeroom overview</h3><span class="rule"></span></div>
+  <div class="ins__grid">
+    <div class="ins__panel">
+      <h4>Slips by subject</h4>
+      <div class="sub">Where slips cluster across your homeroom</div>
+      <div class="ins__canvas"><canvas id="homeroomSubjectBar"></canvas></div>
     </div>
-    <div class="col-md-6 mb-4">
-      <h4 class="text-success">Homeroom: Slips per Student</h4>
-      <canvas id="homeroomStudentBar"></canvas>
+    <div class="ins__panel">
+      <h4>Slips by student</h4>
+      <div class="sub">Every subject, per homeroom student</div>
+      <div class="ins__canvas"><canvas id="homeroomStudentBar"></canvas></div>
     </div>
   </div>
   {% endif %}
-</div>
 
+{% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% if (slip_counts_by_type.get('Pink Slip', 0) + slip_counts_by_type.get('Yellow Slip', 0)) > 0 %}
 <script>
+  const C = {
+    rose:'#C13567', roseSoft:'rgba(193,53,103,.14)',
+    amber:'#E9A23B', amberSoft:'rgba(233,162,59,.16)',
+    emerald:'#1E8E6A', ink:'#201B24', line:'#EDE4E0', faint:'#8A848F'
+  };
+  Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
+  Chart.defaults.color = C.faint;
+  Chart.defaults.plugins.legend.labels.usePointStyle = true;
+  Chart.defaults.plugins.legend.labels.boxWidth = 8;
+  Chart.defaults.maintainAspectRatio = false;
+  const gridCfg = { grid:{ color:C.line, drawBorder:false }, ticks:{ color:C.faint } };
+
   const slipCountsByType = {{ slip_counts_by_type | tojson }};
   const slipDetails = {{ slip_type_details | tojson }};
-
+  const pieLabels = Object.keys(slipCountsByType);
+  const colorForSlip = l => /yellow/i.test(l) ? C.amber : C.rose;
   new Chart(document.getElementById('subjectSlipPie'), {
-    type: 'pie',
-    data: {
-      labels: Object.keys(slipCountsByType),
-      datasets: [{
-        data: Object.values(slipCountsByType),
-        backgroundColor: ['#f06292', '#ffd54f']
-      }]
-    },
-    options: {
-      responsive: true,
-      plugins: {
-        tooltip: {
-          callbacks: {
-            label: function(ctx) {
-              const type = ctx.label;
-              const lines = slipDetails[type] || [];
-              return [type + ': ' + ctx.raw, ...lines];
-            }
-          }
-        },
-        legend: { position: 'bottom' }
-      }
-    }
+    type:'doughnut',
+    data:{ labels:pieLabels,
+      datasets:[{ data:Object.values(slipCountsByType),
+        backgroundColor:pieLabels.map(colorForSlip), borderColor:'#fff', borderWidth:3, hoverOffset:6 }] },
+    options:{ cutout:'62%', plugins:{ legend:{ position:'bottom' },
+      tooltip:{ callbacks:{ afterBody:(items)=>{ const t=items[0].label; const l=slipDetails[t]||[];
+        return l.length?['',...l.slice(0,8), l.length>8?('…and '+(l.length-8)+' more'):'']:''; } } } } }
+  });
+
+  const overTime = {{ slips_over_time | tojson }};
+  const months = Object.keys(overTime);
+  const fmt = m => { const p=m.split('-'); return new Date(p[0],p[1]-1).toLocaleString('en',{month:'short',year:'2-digit'}); };
+  new Chart(document.getElementById('trendLine'), {
+    type:'line',
+    data:{ labels:months.map(fmt), datasets:[
+      { label:'Pink', data:months.map(m=>overTime[m]['Pink Slip']||0),
+        borderColor:C.rose, backgroundColor:C.roseSoft, fill:true, tension:.35, pointRadius:3 },
+      { label:'Yellow', data:months.map(m=>overTime[m]['Yellow Slip']||0),
+        borderColor:C.amber, backgroundColor:C.amberSoft, fill:true, tension:.35, pointRadius:3 }
+    ]},
+    options:{ plugins:{ legend:{ position:'bottom' } },
+      scales:{ x:gridCfg, y:{ grid:gridCfg.grid, ticks:{ color:C.faint, precision:0 }, beginAtZero:true } } }
+  });
+
+  const perStudentData = {{ slips_stacked_data | tojson }};
+  const sortedStudents = Object.keys(perStudentData).sort((a,b)=>{
+    const ta=(perStudentData[a]['Pink Slip']||0)+(perStudentData[a]['Yellow Slip']||0);
+    const tb=(perStudentData[b]['Pink Slip']||0)+(perStudentData[b]['Yellow Slip']||0);
+    return tb-ta;
+  });
+  new Chart(document.getElementById('perStudent'), {
+    type:'bar',
+    data:{ labels:sortedStudents, datasets:[
+      { label:'Pink', data:sortedStudents.map(s=>perStudentData[s]['Pink Slip']||0),
+        backgroundColor:C.rose, borderRadius:4, stack:'s' },
+      { label:'Yellow', data:sortedStudents.map(s=>perStudentData[s]['Yellow Slip']||0),
+        backgroundColor:C.amber, borderRadius:4, stack:'s' }
+    ]},
+    options:{ indexAxis:'y', plugins:{ legend:{ position:'bottom' } },
+      scales:{ x:{ grid:gridCfg.grid, stacked:true, beginAtZero:true, ticks:{ color:C.faint, precision:0 } },
+               y:{ grid:{ display:false }, stacked:true, ticks:{ color:C.ink } } } }
+  });
+
+  Object.keys(window.__gs || {}).forEach(function(idx){
+    const data = window.__gs[idx];
+    const students = Object.keys(data);
+    new Chart(document.getElementById('stackedSlipBar_'+idx), {
+      type:'bar',
+      data:{ labels:students, datasets:[
+        { label:'Pink', data:students.map(s=>data[s]['Pink Slip']||0), backgroundColor:C.rose, borderRadius:4, stack:'s' },
+        { label:'Yellow', data:students.map(s=>data[s]['Yellow Slip']||0), backgroundColor:C.amber, borderRadius:4, stack:'s' }
+      ]},
+      options:{ plugins:{ legend:{ position:'bottom' } },
+        scales:{ x:{ grid:{ display:false }, stacked:true, ticks:{ color:C.faint, maxRotation:45, minRotation:0 } },
+                 y:{ grid:gridCfg.grid, stacked:true, beginAtZero:true, ticks:{ color:C.faint, precision:0 } } } }
+    });
   });
 
   {% if is_homeroom_teacher %}
   const slipsBySubject = {{ slips_by_subject | tojson }};
   new Chart(document.getElementById('homeroomSubjectBar'), {
-    type: 'bar',
-    data: {
-      labels: Object.keys(slipsBySubject),
-      datasets: [{
-        label: 'Total Slips',
-        data: Object.values(slipsBySubject),
-        backgroundColor: '#81c784'
-      }]
-    },
-    options: {
-      responsive: true,
-      scales: {
-        y: { beginAtZero: true },
-        x: { ticks: { maxRotation: 45, minRotation: 30 } }
-      }
-    }
+    type:'bar',
+    data:{ labels:Object.keys(slipsBySubject),
+      datasets:[{ label:'Total slips', data:Object.values(slipsBySubject),
+        backgroundColor:C.emerald, borderRadius:4 }] },
+    options:{ plugins:{ legend:{ display:false } },
+      scales:{ x:{ grid:{ display:false }, ticks:{ color:C.faint, maxRotation:45 } },
+               y:{ grid:gridCfg.grid, beginAtZero:true, ticks:{ color:C.faint, precision:0 } } } }
   });
 
   const slipsByStudentHomeroom = {{ slips_by_student_homeroom | tojson }};
+  const hrSorted = Object.keys(slipsByStudentHomeroom).sort((a,b)=>slipsByStudentHomeroom[b]-slipsByStudentHomeroom[a]);
   new Chart(document.getElementById('homeroomStudentBar'), {
-    type: 'bar',
-    data: {
-      labels: Object.keys(slipsByStudentHomeroom),
-      datasets: [{
-        label: 'Total Slips',
-        data: Object.values(slipsByStudentHomeroom),
-        backgroundColor: '#ffb74d'
-      }]
-    },
-    options: {
-      responsive: true,
-      scales: {
-        y: { beginAtZero: true },
-        x: { ticks: { maxRotation: 45, minRotation: 30 } }
-      }
-    }
+    type:'bar',
+    data:{ labels:hrSorted,
+      datasets:[{ label:'Total slips', data:hrSorted.map(s=>slipsByStudentHomeroom[s]),
+        backgroundColor:C.amber, borderRadius:4 }] },
+    options:{ indexAxis:'y', plugins:{ legend:{ display:false } },
+      scales:{ x:{ grid:gridCfg.grid, beginAtZero:true, ticks:{ color:C.faint, precision:0 } },
+               y:{ grid:{ display:false }, ticks:{ color:C.ink } } } }
   });
   {% endif %}
 </script>
+{% endif %}
 {% endblock %}

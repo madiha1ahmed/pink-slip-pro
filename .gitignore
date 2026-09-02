@@ -1,1 +1,10 @@
 .vercel
+.env
+slip_data.db
+venv/
+__pycache__/
+.env
+slip_data.db
+venv/
+__pycache__/
+.DS_Store

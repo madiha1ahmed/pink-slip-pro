@@ -1,0 +1,115 @@
+{% extends 'base.html' %}
+{% block title %}Al-Mahdi Learning Institute · School Management{% endblock %}
+
+{% block content %}
+<style>
+  .hub-hero{ display:grid; grid-template-columns:1.15fr .85fr; gap:2.5rem; align-items:center;
+    padding:1rem 0 2rem; }
+  @media (max-width:840px){ .hub-hero{ grid-template-columns:1fr; gap:1.5rem; } }
+  .hub-hero h1{ margin:.4rem 0 .8rem; }
+  .hub-hero .lead{ color:var(--ink-soft,#5A5560); font-size:1.06rem; max-width:46ch; }
+  .hub-facts{ display:flex; flex-wrap:wrap; gap:.5rem; margin-top:1.2rem; }
+  .fact{ background:#fff; border:1px solid var(--line,#EDE4E0); border-radius:999px;
+    padding:.4rem .85rem; font-size:.82rem; color:var(--ink,#201B24); font-weight:500;
+    box-shadow:0 1px 2px rgba(0,0,0,.04); }
+  .fact b{ color:var(--rose-deep,#9C2650); }
+  .hub-crest{ background:linear-gradient(165deg,#fff,#FCE7EF); border:1px solid var(--rose-edge,#F3B8CE);
+    border-radius:20px; padding:2rem; text-align:center; box-shadow:0 18px 48px rgba(156,38,80,.14); }
+  .hub-crest img{ width:96px; height:96px; object-fit:cover; border-radius:20px; box-shadow:0 6px 18px rgba(0,0,0,.12); }
+  .hub-crest h3{ margin:.9rem 0 .2rem; }
+  .hub-crest p{ color:var(--ink-soft,#5A5560); font-size:.9rem; margin:0; }
+
+  .sections{ margin-top:1rem; }
+  .sec-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:1.25rem; }
+  .sec{ position:relative; display:flex; flex-direction:column; background:#fff;
+    border:1px solid var(--line,#EDE4E0); border-radius:18px; padding:1.5rem; text-decoration:none;
+    box-shadow:0 1px 2px rgba(32,27,36,.05),0 6px 18px rgba(32,27,36,.05); transition:.18s ease; overflow:hidden; }
+  .sec:hover{ transform:translateY(-3px); box-shadow:0 16px 36px rgba(32,27,36,.12); border-color:var(--rose-edge,#F3B8CE); }
+  .sec::before{ content:""; position:absolute; inset:0 auto 0 0; width:5px; }
+  .sec.rose::before{ background:#C13567; } .sec.amber::before{ background:#E9A23B; }
+  .sec.emerald::before{ background:#1E8E6A; } .sec.slate::before{ background:#5b6472; }
+  .sec__icon{ font-size:1.7rem; }
+  .sec h3{ margin:.6rem 0 .35rem; font-size:1.2rem; color:var(--ink,#201B24); }
+  .sec p{ color:var(--ink-soft,#5A5560); font-size:.9rem; margin:0 0 1rem; flex:1; }
+  .sec__go{ font-weight:600; font-size:.9rem; color:var(--rose-deep,#9C2650); }
+  .sec .tag{ position:absolute; top:1rem; right:1rem; font-size:.66rem; font-weight:700; letter-spacing:.08em;
+    text-transform:uppercase; padding:.2rem .5rem; border-radius:999px; }
+  .tag.soon{ background:#FBF0D8; color:#8a6410; border:1px solid #EDCE8A; }
+  .tag.live{ background:#DFF3EC; color:#155e46; border:1px solid #bfe6d7; }
+</style>
+
+<section class="hub-hero">
+  <div>
+    <span class="eyebrow">School Management System</span>
+    <h1>Al-Mahdi Learning Institute</h1>
+    <p class="lead">
+      A Shia Islamic school in Niagara Falls, Ontario, nurturing students from JK to Grade 8
+      to excel academically and spiritually. This is the staff hub for homework accountability,
+      attendance, and student recognition — all in one place.
+    </p>
+    <div class="hub-facts">
+      <span class="fact">📍 Niagara Falls, ON</span>
+      <span class="fact">🎓 JK–Grade 8</span>
+      <span class="fact">🕌 Tarbiyah curriculum</span>
+      <span class="fact">📖 Est. <b>2019</b></span>
+    </div>
+  </div>
+  <div class="hub-crest">
+    <img src="{{ url_for('static', filename='images/al-mahdi-logo.jpeg') }}" alt="Al-Mahdi Learning Institute logo">
+    <h3>Staff Portal</h3>
+    <p>
+      {% if 'teacher_email' in session %}
+        Welcome back. Choose a section to get started.
+      {% else %}
+        Please <a href="{{ url_for('login') }}">log in</a> or
+        <a href="{{ url_for('register') }}">register</a> to begin.
+      {% endif %}
+    </p>
+  </div>
+</section>
+
+<div class="sections">
+  <div class="section-label" style="display:flex; align-items:center; gap:.6rem; margin:1rem 0 1.1rem;">
+    <h3 style="margin:0; font-family:var(--font-display,serif);">Sections</h3>
+    <span style="flex:1; height:1px; background:#E3D8D3;"></span>
+  </div>
+
+  <div class="sec-grid">
+    <!-- PinkSlip Pro -->
+    <a class="sec rose" href="{% if 'teacher_email' in session %}{{ url_for('dashboard') }}{% else %}{{ url_for('login') }}{% endif %}">
+      <span class="tag live">Live</span>
+      <div class="sec__icon">🎀</div>
+      <h3>PinkSlip Pro</h3>
+      <p>Assign pink and yellow homework slips, notify parents automatically, and track accountability with insights.</p>
+      <span class="sec__go">Open PinkSlip Pro →</span>
+    </a>
+
+    <!-- Attendance -->
+    <a class="sec amber" href="{% if 'teacher_email' in session %}{{ url_for('attendance') }}{% else %}{{ url_for('login') }}{% endif %}">
+      <span class="tag live">Live</span>
+      <div class="sec__icon">🕘</div>
+      <h3>Attendance</h3>
+      <p>Record late arrivals and absences. Parents are notified by email and SMS, with the same clear visuals you know from PinkSlip Pro.</p>
+      <span class="sec__go">Open Attendance →</span>
+    </a>
+
+    <!-- Student of the Month -->
+    <a class="sec emerald" href="{% if 'teacher_email' in session %}{{ url_for('student_of_the_month') }}{% else %}{{ url_for('login') }}{% endif %}">
+      <span class="tag live">Live</span>
+      <div class="sec__icon">⭐</div>
+      <h3>Student of the Month</h3>
+      <p>Every teacher rates the students they teach across key learning skills. Scores combine to recognize standout students each month.</p>
+      <span class="sec__go">Open evaluations →</span>
+    </a>
+
+    <!-- Certificates -->
+    <a class="sec slate" href="{% if 'teacher_email' in session %}{{ url_for('index') }}{% else %}{{ url_for('login') }}{% endif %}">
+      <span class="tag soon">Coming soon</span>
+      <div class="sec__icon">🏅</div>
+      <h3>e-Certificates</h3>
+      <p>Automatic PDF certificates that reward perfect attendance, punctuality, and completed homework — emailed to students and parents.</p>
+      <span class="sec__go">In development →</span>
+    </a>
+  </div>
+</div>
+{% endblock %}

@@ -8,15 +8,17 @@ from flask_mail import Mail, Message
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 from werkzeug.security import check_password_hash, generate_password_hash
 from functools import wraps
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from openai import OpenAI
 from flask import Markup
 import re
 import markdown2
-from twilio.rest import Client
 import csv
+import json
 from io import StringIO
 import requests
+# SMS provider SDK (Plivo) is imported lazily inside send_sms_message so the app
+# still runs if you choose the ClickSend HTTP option and never install plivo.
 
 
 
@@ -27,10 +29,35 @@ PRINCIPAL_WHATSAPP = os.getenv("PRINCIPAL_WHATSAPP") # e.g. 14165550123 (no +)
 
 SECRETARY_EMAIL   = os.getenv("SECRETARY_EMAIL")
 SENDER_BCC_EMAIL  = os.getenv("SENDER_BCC_EMAIL") or os.getenv("MAIL_USERNAME")
+VICE_PRINCIPAL_EMAIL = os.getenv("VICE_PRINCIPAL_EMAIL", "malasam@almahdilearninginstitute.ca")
+
+# Secret token that protects the daily-tasks endpoint (set this in .env and in your cron job)
+TASK_KEY = os.getenv("TASK_KEY", "change-me")
+
+# Student-of-the-Month reminder schedule (days of the month).
+# 23rd: heads-up to ALL teachers · 25th: "due today" to those who haven't submitted
+# 26th: "past due" · 27th: "past due" + CC the vice-principal
+SOM_REMIND_ALL_DAY      = int(os.getenv("SOM_REMIND_ALL_DAY", 23))
+SOM_DUE_TODAY_DAY       = int(os.getenv("SOM_DUE_TODAY_DAY", 25))
+SOM_PAST_DUE_DAY        = int(os.getenv("SOM_PAST_DUE_DAY", 26))
+SOM_PAST_DUE_VP_DAY     = int(os.getenv("SOM_PAST_DUE_VP_DAY", 27))
 
 
 account_sid = os.getenv("TWILIO_ACCOUNT_SID")
 auth_token=os.getenv("TWILIO_AUTH_TOKEN")
+
+# --- SMS configuration (Twilio-free) ---
+# SMS_PROVIDER: "clicksend" (HTTP only, no extra install) or "plivo" (pip install plivo)
+SMS_PROVIDER = os.getenv("SMS_PROVIDER", "clicksend").lower()
+SMS_FROM     = os.getenv("SMS_FROM")   # your sender number/ID, e.g. +12495551234
+
+# ClickSend
+CLICKSEND_USERNAME = os.getenv("CLICKSEND_USERNAME")
+CLICKSEND_API_KEY  = os.getenv("CLICKSEND_API_KEY")
+
+# Plivo
+PLIVO_AUTH_ID    = os.getenv("PLIVO_AUTH_ID")
+PLIVO_AUTH_TOKEN = os.getenv("PLIVO_AUTH_TOKEN")
 
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -53,15 +80,10 @@ if db_url and db_url.startswith("postgres://"):
 
 app.config["SQLALCHEMY_DATABASE_URI"] = db_url
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your_secret_key')
 
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your_secret_key')
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('POSTGRES_URL', 'sqlite:///slip_data.db')
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
-#app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('POSTGRES_URL')  # keep your var name
-#app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
-#app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('POSTGRES_URL')  # keep your var name
+# (Removed a duplicate line here that overrode the database with POSTGRES_URL/sqlite.
+#  db_url above already handles DATABASE_URL, POSTGRES_URL, and the sqlite fallback.)
 
 @app.before_first_request
 def create_tables():
@@ -72,12 +94,15 @@ def create_tables():
 
 # Email configuration
 # Email configuration for Gmail
-app.config['MAIL_SERVER'] = 'smtp.gmail.com'
-app.config['MAIL_PORT'] = 587
+app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER', 'smtp.gmail.com')
+app.config['MAIL_PORT'] = int(os.getenv('MAIL_PORT', 587))
 app.config['MAIL_USE_TLS'] = True
 app.config['MAIL_USE_SSL'] = False
-app.config['MAIL_USERNAME'] = 'madiha1ahmed@gmail.com'  # Replace with your Gmail address
-app.config['MAIL_PASSWORD'] = 'ktqr vukf tsay cqzw'  # Replace with the App Password
+app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME')  # from .env — never hard-code
+app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')  # Gmail App Password, from .env
+
+# How parents are notified for a slip: "email" or "email_sms"
+NOTIFY_CHANNEL   = os.getenv('NOTIFY_CHANNEL', 'email')
 
 app.config['ENV'] = 'production'
 app.config['DEBUG'] = False
@@ -87,100 +112,56 @@ app.config['REMEMBER_COOKIE_SECURE'] = True
 
 mail = Mail(app)
 
-teachers = {
-    "mahmed@almahdilearninginstitute.ca": {
-        "password": generate_password_hash("12AlMahdi!"),  # Secure password hashing
-        "homeroom_grade": [6],
-        "name": "Madiha Mariam Ahmed",
-        "grades": {
-            4: ["Math"],  # Teaches only Math in Grade 4
-            5: ["Math"],  # Teaches multiple subjects in Grade 5
-            6: ["Math"]  # Teaches only Art & Gym in Grade 6
-        }
-    },
-
-    "fjaffal@almahdilearninginstitute.ca": {
-        "password": generate_password_hash("12AlMahdi!"),  # Secure password hashing
-        "homeroom_grade": [4,5],
-        "name": "Fatme Jaffal",
-        "grades": {
-            2: ["Arabic", "Quran"],  # Teaches only Math in Grade 4
-            3: ["Arabic", "Quran"],  # Teaches multiple subjects in Grade 5
-            6: ["Arabic", "Art"],
-            7: ["Arabic", "Art"],
-            8: ["Arabic", "Art"]  # Teaches only Art & Gym in Grade 6
-        }
-    },
-
-    "hassaad@almahdilearninginstitute.ca": {
-        "password": generate_password_hash("12AlMahdi!"),  # Secure password hashing
-        "homeroom_grade": [None],
-        "name": "Hala Assaad",
-        "grades": {
-            2: ["English"],  # Teaches only Math in Grade 4
-            3: ["English"] # Teaches multiple subjects in Grade 5
-              # Teaches only Art & Gym in Grade 6
-        }
-    },
-
-    "faborida@almahdilearninginstitute.ca": {
-        "password": generate_password_hash("12AlMahdi!"),  # Secure password hashing
-        "homeroom_grade": [4,5],
-        "name": "Fatima Abourida",
-        "grades": {
-            4: ["English", "Gym"],
-            5: ["Gym"],
-            6: ["Gym"],
-            7: ["Gym"],
-            8: ["Gym"]
-              # Teaches only Math in Grade 4
-             # Teaches multiple subjects in Grade 5
-              # Teaches only Art & Gym in Grade 6
-        }
-    },
-
-
-    "fabbas@almahdilearninginstitute.ca": {
-        "password": generate_password_hash("12AlMahdi!"),
-        "homeroom_grade": [2,3],
-        "name": "Faiza Abbas, Al-Mahdi's Math genius and Clean freak!!",
-        "grades": {
-            2: ["Math", "Science", "Social", "Islamic Studies", "Gym"],
-            3: ["Math", "Science", "Social", "Islamic Studies", "Gym"],
-            8: ["Math"],
-            7: ["Math"]
-        }
-    },
-    "sselman@almahdilearninginstitute.ca": {
-        "password": generate_password_hash("12AlMahdi!"),
-        "homeroom_grade": [4,5],
-        "name": "Sarah Selman",
-        "grades": {
-            4: ["English", "Islamic Studies", "French", "Social"],
-            5: ["French", "Islamic Studies", "Social"],
-            6: ["French"],
-            7: ["French"],
-            8: ["French"]
-        }
-    },
-    "sshoaib@almahdilearninginstitute.ca": {
-        "password": generate_password_hash("12AlMahdi!"),
-        "name": "Sarah Shoaib",
-        "homeroom_grade": ["JK"],
-        "grades": {
-            1: ["English"]
-        }
-    }
-
-}
-
-
+# NOTE: Teachers are now stored in the database (see Teacher model below) and
+# register themselves via /register. The old hard-coded 'teachers' dict was removed.
+# get_teachers() rebuilds the same {email: {...}} shape the rest of the app expects.
 
 #bcrypt = Bcrypt(app)
 
 db = SQLAlchemy(app)
 #db1 = SQLAlchemy(app)
 migrate = Migrate(app, db)
+
+
+class Teacher(db.Model):
+    """A registered teacher. Replaces the old hard-coded `teachers` dict."""
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(150), nullable=False)
+    email = db.Column(db.String(150), unique=True, nullable=False, index=True)
+    password_hash = db.Column(db.String(255), nullable=False)
+    phone = db.Column(db.String(30), nullable=True)   # +E.164 mobile for staff SMS
+    # Stored as JSON text so it works on both SQLite and Postgres:
+    homeroom_grades_json = db.Column(db.Text, default="[]")   # e.g. "[5]" or "[4,5]"
+    grades_json = db.Column(db.Text, default="{}")            # e.g. "{\"5\": [\"Math\"]}"
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_info(self):
+        """Return the same dict shape the rest of the app expects."""
+        try:
+            homeroom = json.loads(self.homeroom_grades_json or "[]")
+        except Exception:
+            homeroom = []
+        try:
+            raw_grades = json.loads(self.grades_json or "{}")
+        except Exception:
+            raw_grades = {}
+        # Keys come back as strings from JSON; convert numeric grades back to ints
+        grades = {}
+        for k, v in raw_grades.items():
+            key = int(k) if str(k).isdigit() else k
+            grades[key] = v
+        return {
+            "password": self.password_hash,
+            "name": self.name,
+            "phone": self.phone,
+            "homeroom_grade": homeroom,
+            "grades": grades,
+        }
+
+
+def get_teachers():
+    """Rebuild the {email: {...}} mapping from the database on demand."""
+    return {t.email: t.to_info() for t in Teacher.query.all()}
 
 class HealthData(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -192,6 +173,10 @@ class HealthData(db.Model):
     homework_desc = db.Column(db.String, nullable=False)
     teacher_email = db.Column(db.String, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)  # Add this field
+    # For Yellow Slips: the new date the student must show the homework by.
+    reschedule_date = db.Column(db.Date, nullable=True)
+    # Set True once the teacher has been reminded on the reschedule date (prevents duplicate reminders).
+    reschedule_notified = db.Column(db.Boolean, default=False)
 
     def __repr__(self):
         return f'<HealthData {self.id}>'
@@ -246,6 +231,44 @@ class StudentEvaluation(db.Model):
         return f'<ArchiveData {self.id}>'
 
 
+class Notification(db.Model):
+    """In-app notifications shown via the bell icon on the dashboard."""
+    id = db.Column(db.Integer, primary_key=True)
+    teacher_email = db.Column(db.String, nullable=False, index=True)
+    message = db.Column(db.String, nullable=False)
+    category = db.Column(db.String, default="info")   # info | yellow_due | som_reminder
+    link = db.Column(db.String, nullable=True)         # optional URL to jump to
+    is_read = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class AttendanceSlip(db.Model):
+    """A late arrival or absence recorded by a homeroom teacher."""
+    id = db.Column(db.Integer, primary_key=True)
+    date = db.Column(db.Date, nullable=False, index=True)
+    slip_type = db.Column(db.String, nullable=False)     # "Late" | "Absent"
+    student_name = db.Column(db.String, nullable=False, index=True)
+    grade = db.Column(db.Integer, nullable=False)
+    note = db.Column(db.String, nullable=True)           # optional reason
+    recorded_by = db.Column(db.String, nullable=False)   # teacher email
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+def add_notification(teacher_email, message, category="info", link=None):
+    """Create an in-app notification (deduped against an identical unread one)."""
+    if not teacher_email:
+        return
+    existing = Notification.query.filter_by(
+        teacher_email=teacher_email, message=message, is_read=False
+    ).first()
+    if existing:
+        return
+    db.session.add(Notification(
+        teacher_email=teacher_email, message=message, category=category, link=link
+    ))
+    db.session.commit()
+
+
 def check_three_pink_slips(student_name):
     try:
         slips = HealthData.query.filter_by(student_name=student_name, slip_type="Pink Slip").order_by(HealthData.date).all()
@@ -288,39 +311,261 @@ def check_three_pink_slips(student_name):
         print(f"❌ Error in check_three_pink_slips: {e}")
 
 
-def send_whatsapp_message(to_number, message_body):
-    """
-    Sends a plain text WhatsApp message using Twilio.
+def _normalize_e164(number):
+    """Return a clean +E.164 number (strips quotes/spaces and any leftover prefix)."""
+    if not number:
+        return None
+    n = str(number).replace("whatsapp:", "").strip().strip('"').strip("'").strip()
+    return n or None
 
-    Args:
-        to_number (str): WhatsApp number in E.164 format, e.g., +14165551234
-        message_body (str): Message content (plain text)
 
-    Environment Variables Required:
-        - TWILIO_ACCOUNT_SID
-        - TWILIO_AUTH_TOKEN
-        - TWILIO_WHATSAPP_FROM (e.g., whatsapp:+14155238886 for sandbox)
-    """
+def _send_sms_clicksend(to_number, message_body):
+    """Send SMS via ClickSend — HTTP only, no SDK to install (uses `requests`)."""
+    if not CLICKSEND_USERNAME or not CLICKSEND_API_KEY:
+        print("❌ ClickSend credentials missing. SMS not sent.")
+        return
+    payload = {"messages": [{
+        "source": "python",
+        "body": message_body,
+        "to": to_number,
+        **({"from": SMS_FROM} if SMS_FROM else {}),
+    }]}
     try:
-        
-        
-
-        if not account_sid or not auth_token:
-            print("❌ TWILIO credentials missing. WhatsApp not sent.")
-            return
-        
-        
-
-        client = Client(account_sid, auth_token)
-        msg = client.messages.create(
-            from_= os.getenv("TWILIO_WHATSAPP_FROM"),
-            to=f"whatsapp:{to_number}",
-            body=message_body
+        r = requests.post(
+            "https://rest.clicksend.com/v3/sms/send",
+            auth=(CLICKSEND_USERNAME, CLICKSEND_API_KEY),
+            json=payload,
+            timeout=15,
         )
-        print(f"📤 WhatsApp sent to {to_number} | SID: {msg.sid}")
-
+        if r.status_code == 200:
+            print(f"📤 SMS (ClickSend) sent to {to_number}")
+        else:
+            print(f"❌ ClickSend error {r.status_code}: {r.text[:300]}")
     except Exception as e:
-        print(f"❌ Error sending WhatsApp: {e}")
+        print(f"❌ Error sending SMS via ClickSend: {e}")
+
+
+def _send_sms_plivo(to_number, message_body):
+    """Send SMS via Plivo — requires `pip install plivo` and a Plivo number in SMS_FROM."""
+    if not PLIVO_AUTH_ID or not PLIVO_AUTH_TOKEN or not SMS_FROM:
+        print("❌ Plivo credentials or SMS_FROM missing. SMS not sent.")
+        return
+    try:
+        import plivo  # lazy import so the app runs without plivo installed
+        client = plivo.RestClient(PLIVO_AUTH_ID, PLIVO_AUTH_TOKEN)
+        resp = client.messages.create(
+            src=SMS_FROM,        # your Plivo number, e.g. +12495551234
+            dst=to_number,       # +E.164
+            text=message_body,
+        )
+        print(f"📤 SMS (Plivo) sent to {to_number} | {getattr(resp, 'message_uuid', '')}")
+    except Exception as e:
+        print(f"❌ Error sending SMS via Plivo: {e}")
+
+
+def send_sms_message(to_number, message_body):
+    """Send a plain-text SMS using whichever provider SMS_PROVIDER selects.
+
+    SMS_PROVIDER = "clicksend" (default, HTTP only) or "plivo".
+    Neither is Twilio.
+    """
+    to_number = _normalize_e164(to_number)
+    if not to_number:
+        print("⚠️ No mobile number provided; SMS skipped.")
+        return
+    if SMS_PROVIDER == "plivo":
+        _send_sms_plivo(to_number, message_body)
+    else:
+        _send_sms_clicksend(to_number, message_body)
+
+
+def notify_parent_channels(to_number, message_body):
+    """Send the parent notification over the channels NOTIFY_CHANNEL enables.
+
+    NOTIFY_CHANNEL values:
+        "email"     -> SMS off (email is sent separately)
+        "email_sms" -> also send SMS
+    """
+    if (NOTIFY_CHANNEL or "email").lower() == "email_sms":
+        send_sms_message(to_number, message_body)
+
+
+def send_attendance_notification(student, slip_type, on_date, note=None):
+    """Email (+ SMS per NOTIFY_CHANNEL) the parents about a late/absent slip."""
+    label = "late arrival" if slip_type == "Late" else "absence"
+    subject = f"Attendance notice — {student.name} ({slip_type})"
+    body = (
+        f"Assalamu alaikum,\n\n"
+        f"This is a notification from Al-Mahdi Learning Institute regarding {student.name} "
+        f"(Grade {student.grade}).\n\n"
+        f"A {label} was recorded on {on_date.strftime('%B %d, %Y')}."
+        + (f"\nNote: {note}" if note else "")
+        + "\n\nIf you believe this is in error, please contact the school office.\n\n"
+        f"Jazakumullahu khair,\nAl-Mahdi Learning Institute"
+    )
+    recipients = [e for e in [student.parent_email_mom, student.parent_email_dad] if e]
+    send_email(subject, recipients, body, cc=None)
+    if getattr(student, "parent_whatsapp", None):
+        notify_parent_channels(student.parent_whatsapp,
+                               f"Al-Mahdi: {student.name} was marked {slip_type.lower()} on "
+                               f"{on_date.strftime('%b %d, %Y')}." + (f" Note: {note}" if note else ""))
+
+
+def send_email(subject, recipients, body, cc=None):
+    """Generic email sender (used for teacher/staff notifications)."""
+    if isinstance(recipients, str):
+        recipients = [recipients]
+    recipients = [r for r in (recipients or []) if r]
+    if not recipients:
+        print(f"⚠️ send_email: no recipients for '{subject}'")
+        return
+    try:
+        msg = Message(subject=subject, recipients=recipients,
+                      cc=[c for c in (cc or []) if c] or None,
+                      sender=app.config.get('MAIL_USERNAME'))
+        msg.body = body
+        mail.send(msg)
+        print(f"📧 Email sent: '{subject}' -> {recipients}")
+    except Exception as e:
+        print(f"❌ Error sending email '{subject}': {e}")
+
+
+def notify_teacher(teacher_email, subject, body, category="info", link=None, cc=None, sms=True):
+    """One call to reach a teacher: in-app bell + email + (optionally) SMS."""
+    add_notification(teacher_email, subject, category=category, link=link)
+    send_email(subject, teacher_email, body, cc=cc)
+    if sms:
+        teacher = Teacher.query.filter_by(email=teacher_email).first()
+        # We only have teacher mobiles if you later add a phone field; SMS to staff
+        # is skipped gracefully until then. Parent SMS is unaffected.
+        phone = getattr(teacher, "phone", None) if teacher else None
+        if phone:
+            send_sms_message(phone, f"{subject}\n\n{body}")
+
+
+# =====================================================================
+#  DAILY TASKS  — run once a day (via /tasks/daily hit by a cron job,
+#  and opportunistically when a teacher opens the dashboard).
+# =====================================================================
+_last_daily_run = {"date": None}
+
+def _yellow_slips_due_today():
+    """Remind the assigning teacher that a rescheduled (yellow-slip) homework is due today."""
+    today = date.today()
+    due = HealthData.query.filter(
+        HealthData.slip_type == "Yellow Slip",
+        HealthData.reschedule_date == today,
+        (HealthData.reschedule_notified == False) | (HealthData.reschedule_notified.is_(None))
+    ).all()
+    for slip in due:
+        subject = f"📌 Homework due today: {slip.student_name}"
+        body = (
+            f"Assalamu alaikum,\n\n"
+            f"This is a reminder that {slip.student_name} (Grade {slip.grade_of_student}) "
+            f"was given a yellow slip for {slip.subject_of_student} homework "
+            f"(\"{slip.homework_desc}\") and rescheduled to show it today "
+            f"({today.strftime('%B %d, %Y')}).\n\n"
+            f"Please check whether the homework has been shown. If not, you can convert "
+            f"the yellow slip to a pink slip from your dashboard.\n\n— PinkSlip Pro"
+        )
+        notify_teacher(slip.teacher_email, subject, body, category="yellow_due",
+                       link="/dashboard", sms=True)
+        slip.reschedule_notified = True
+    if due:
+        db.session.commit()
+    return len(due)
+
+
+def _som_teachers_not_submitted(month, year):
+    """Teachers who have NOT submitted any Student-of-the-Month evaluation for month/year."""
+    submitted = {
+        row.teacher_email for row in StudentEvaluation.query
+        .filter_by(month=month, year=year, is_submitted=True).all()
+    }
+    return [t for t in Teacher.query.all() if t.email not in submitted]
+
+
+def _reminded_today(email, message):
+    """True if this exact reminder was already sent to this teacher today (dedupe emails)."""
+    start = datetime.combine(date.today(), datetime.min.time())
+    return Notification.query.filter(
+        Notification.teacher_email == email,
+        Notification.message == message,
+        Notification.created_at >= start
+    ).first() is not None
+
+
+def _current_som_period():
+    """The month/year the reminders refer to (the current calendar month)."""
+    today = date.today()
+    return today.strftime("%B"), today.year
+
+
+def _student_of_month_reminders():
+    """Send the scheduled Student-of-the-Month reminders based on today's day number."""
+    today = date.today()
+    day = today.day
+    month, year = _current_som_period()
+    sent = 0
+
+    if day == SOM_REMIND_ALL_DAY:
+        subject = "📝 Student of the Month forms open"
+        body = (f"Assalamu alaikum,\n\nA reminder that the Student of the Month evaluation "
+                f"for {month} {year} is now open. Please complete it by the "
+                f"{SOM_DUE_TODAY_DAY}th.\n\nJazakumullahu khair.\n— PinkSlip Pro")
+        for t in Teacher.query.all():
+            if _reminded_today(t.email, subject): continue
+            notify_teacher(t.email, subject, body, category="som_reminder", link="/student-of-the-month")
+            sent += 1
+
+    elif day == SOM_DUE_TODAY_DAY:
+        subject = "⏰ Student of the Month forms are due today"
+        body = (f"Assalamu alaikum,\n\nThe Student of the Month evaluation for {month} {year} "
+                f"is due today. Our records show you haven't submitted yet — please complete it.\n\n— PinkSlip Pro")
+        for t in _som_teachers_not_submitted(month, year):
+            if _reminded_today(t.email, subject): continue
+            notify_teacher(t.email, subject, body, category="som_reminder", link="/student-of-the-month")
+            sent += 1
+
+    elif day == SOM_PAST_DUE_DAY:
+        subject = "⚠️ Student of the Month forms are past due"
+        body = (f"Assalamu alaikum,\n\nThe Student of the Month evaluation for {month} {year} "
+                f"was due yesterday and is now past due. Please complete it as soon as possible.\n\n— PinkSlip Pro")
+        for t in _som_teachers_not_submitted(month, year):
+            if _reminded_today(t.email, subject): continue
+            notify_teacher(t.email, subject, body, category="som_reminder", link="/student-of-the-month")
+            sent += 1
+
+    elif day == SOM_PAST_DUE_VP_DAY:
+        subject = "🔴 Student of the Month forms still outstanding"
+        body = (f"Assalamu alaikum,\n\nThe Student of the Month evaluation for {month} {year} "
+                f"is still outstanding. The vice-principal has been copied on this reminder. "
+                f"Please complete it today.\n\n— PinkSlip Pro")
+        for t in _som_teachers_not_submitted(month, year):
+            if _reminded_today(t.email, subject): continue
+            notify_teacher(t.email, subject, body, category="som_reminder",
+                           link="/student-of-the-month", cc=[VICE_PRINCIPAL_EMAIL])
+            sent += 1
+
+    return sent
+
+
+def run_daily_tasks(force=False):
+    """Run all scheduled daily jobs. Safe to call on every page load:
+    - yellow-slip reminders are deduped per slip (reschedule_notified)
+    - Student-of-the-Month reminders are deduped per teacher per day
+    The `force` flag is kept for the cron endpoint but no longer gates anything,
+    since each task is individually idempotent.
+    """
+    result = {
+        "yellow_due_notified": _yellow_slips_due_today(),
+        "som_reminders_sent": _student_of_month_reminders(),
+        "date": date.today().isoformat(),
+    }
+    if result["yellow_due_notified"] or result["som_reminders_sent"]:
+        print(f"🗓️  Daily tasks ran: {result}")
+    return result
+
 
 
 def send_email_to_parent(student_name, parent_email_mom, parent_email_dad, slips, is_final=False):
@@ -343,7 +588,7 @@ def send_email_to_parent(student_name, parent_email_mom, parent_email_dad, slips
 
         # Include homeroom teacher only on 3rd slip
         if is_final and student_grade is not None:
-            for email, info in teachers.items():
+            for email, info in get_teachers().items():
                 homeroom_grades = info.get("homeroom_grade")
                 if isinstance(homeroom_grades, int):
                     homeroom_grades = [homeroom_grades]
@@ -418,10 +663,10 @@ Al-Mahdi Learning Institute - PinkSlip Pro
             print(f"Error sending email: {e}")
 
         if parent_whatsapp:
-            whatsapp_body = re.sub(r"\*\*(.*?)\*\*", r"\1", email_body).strip()
-            send_whatsapp_message(parent_whatsapp, whatsapp_body)
+            text_body = re.sub(r"\*\*(.*?)\*\*", r"\1", email_body).strip()
+            notify_parent_channels(parent_whatsapp, text_body)
         else:
-            print(f"⚠️ No WhatsApp number found for {student_name}")
+            print(f"⚠️ No mobile number found for {student_name} (SMS/WhatsApp skipped)")
 
     except Exception as e:
         print(f"Error in send_email_to_parent: {e}")
@@ -497,7 +742,195 @@ def create_tables():
     
 @app.route('/')
 def index():
-    return render_template('index.html')
+    # Unified hub for the whole management system.
+    stats = {}
+    if 'teacher_email' in session:
+        te = session['teacher_email']
+        try:
+            stats['pink'] = HealthData.query.filter_by(teacher_email=te, slip_type="Pink Slip").count()
+            stats['yellow'] = HealthData.query.filter_by(teacher_email=te, slip_type="Yellow Slip").count()
+        except Exception:
+            stats = {}
+        # opportunistic daily run so time-based reminders still fire without a cron
+        try:
+            run_daily_tasks()
+        except Exception as e:
+            print(f"daily task (opportunistic) error: {e}")
+    return render_template('home.html', stats=stats)
+
+
+@app.route('/tasks/daily')
+def tasks_daily():
+    """Hit this once a day from a cron job: /tasks/daily?key=YOUR_TASK_KEY"""
+    if request.args.get('key') != TASK_KEY:
+        return {"error": "unauthorized"}, 403
+    return run_daily_tasks(force=True)
+
+
+@app.route('/notifications')
+@login_required
+def notifications():
+    te = session.get('teacher_email')
+    items = Notification.query.filter_by(teacher_email=te).order_by(Notification.created_at.desc()).limit(100).all()
+    return render_template('notifications.html', items=items)
+
+
+@app.route('/notifications/read/<int:note_id>', methods=['POST'])
+@login_required
+def mark_notification_read(note_id):
+    te = session.get('teacher_email')
+    note = Notification.query.filter_by(id=note_id, teacher_email=te).first()
+    if note:
+        note.is_read = True
+        db.session.commit()
+    return redirect(request.referrer or url_for('notifications'))
+
+
+@app.route('/notifications/read-all', methods=['POST'])
+@login_required
+def mark_all_read():
+    te = session.get('teacher_email')
+    Notification.query.filter_by(teacher_email=te, is_read=False).update({"is_read": True})
+    db.session.commit()
+    return redirect(request.referrer or url_for('notifications'))
+
+
+@app.context_processor
+def inject_notifications():
+    """Make the bell's unread count + recent items available to every template."""
+    if 'teacher_email' not in session:
+        return {}
+    te = session['teacher_email']
+    try:
+        unread = Notification.query.filter_by(teacher_email=te, is_read=False).count()
+        recent = Notification.query.filter_by(teacher_email=te).order_by(Notification.created_at.desc()).limit(6).all()
+    except Exception:
+        unread, recent = 0, []
+    return {"nav_unread": unread, "nav_recent": recent}
+
+
+@app.route('/student-of-the-month')
+@login_required
+def student_of_the_month():
+    return render_template('som.html')
+
+
+# =====================================================================
+#  ATTENDANCE MODULE  (late / absent) — recorded by homeroom teachers
+# =====================================================================
+def _homeroom_grades_for(teacher_email):
+    info = get_teachers().get(teacher_email, {})
+    hg = info.get("homeroom_grade", [])
+    if isinstance(hg, int):
+        hg = [hg]
+    return [g for g in (hg or []) if isinstance(g, int)]
+
+
+@app.route('/attendance', methods=['GET', 'POST'])
+@login_required
+def attendance():
+    teacher_email = session.get('teacher_email')
+    homeroom_grades = _homeroom_grades_for(teacher_email)
+
+    if not homeroom_grades:
+        return render_template('attendance.html', no_homeroom=True,
+                               students=[], today=date.today().isoformat(),
+                               selected_date=date.today().isoformat())
+
+    selected_date_str = request.form.get('date') or request.args.get('date') or date.today().isoformat()
+    try:
+        selected_date = datetime.strptime(selected_date_str, "%Y-%m-%d").date()
+    except ValueError:
+        selected_date = date.today()
+
+    students = Student.query.filter(Student.grade.in_(homeroom_grades)).order_by(Student.name).all()
+
+    if request.method == 'POST':
+        recorded, notified = 0, 0
+        for s in students:
+            status = request.form.get(f"status_{s.id}")   # present | late | absent
+            note = (request.form.get(f"note_{s.id}") or "").strip() or None
+            if status not in ("late", "absent"):
+                continue
+            slip_type = "Late" if status == "late" else "Absent"
+            # avoid duplicates for the same student + date + type
+            exists = AttendanceSlip.query.filter_by(
+                student_name=s.name, date=selected_date, slip_type=slip_type
+            ).first()
+            if exists:
+                continue
+            db.session.add(AttendanceSlip(
+                date=selected_date, slip_type=slip_type, student_name=s.name,
+                grade=s.grade, note=note, recorded_by=teacher_email
+            ))
+            recorded += 1
+            try:
+                send_attendance_notification(s, slip_type, selected_date, note)
+                notified += 1
+            except Exception as e:
+                print(f"attendance notify error for {s.name}: {e}")
+        db.session.commit()
+        if recorded:
+            flash(f"Attendance saved for {selected_date.strftime('%B %d, %Y')} — {recorded} slip(s), parents notified.", "success")
+        else:
+            flash("No late/absent students marked — nothing to record.", "info")
+        return redirect(url_for('attendance', date=selected_date.isoformat()))
+
+    # existing records for that date (to prefill)
+    existing = {}
+    for rec in AttendanceSlip.query.filter_by(date=selected_date).all():
+        existing[rec.student_name] = rec.slip_type
+
+    return render_template('attendance.html', no_homeroom=False, students=students,
+                           existing=existing, homeroom_grades=homeroom_grades,
+                           selected_date=selected_date.isoformat(), today=date.today().isoformat())
+
+
+@app.route('/attendance/log')
+@login_required
+def attendance_log():
+    teacher_email = session.get('teacher_email')
+    homeroom_grades = _homeroom_grades_for(teacher_email)
+    q = AttendanceSlip.query
+    if homeroom_grades:
+        q = q.filter(AttendanceSlip.grade.in_(homeroom_grades))
+    else:
+        q = q.filter_by(recorded_by=teacher_email)
+    slips = q.order_by(AttendanceSlip.date.desc(), AttendanceSlip.student_name).limit(300).all()
+    return render_template('attendance_log.html', slips=slips)
+
+
+@app.route('/attendance/insights')
+@login_required
+def attendance_insights():
+    teacher_email = session.get('teacher_email')
+    homeroom_grades = _homeroom_grades_for(teacher_email)
+    q = AttendanceSlip.query
+    if homeroom_grades:
+        q = q.filter(AttendanceSlip.grade.in_(homeroom_grades))
+    else:
+        q = q.filter_by(recorded_by=teacher_email)
+    slips = q.all()
+
+    counts_by_type = {"Late": 0, "Absent": 0}
+    per_student = {}       # {name: {"Late": n, "Absent": m}}
+    over_time = {}         # {"YYYY-MM": {"Late": n, "Absent": m}}
+    for s in slips:
+        counts_by_type[s.slip_type] = counts_by_type.get(s.slip_type, 0) + 1
+        per_student.setdefault(s.student_name, {"Late": 0, "Absent": 0})
+        per_student[s.student_name][s.slip_type] += 1
+        key = s.date.strftime("%Y-%m")
+        over_time.setdefault(key, {"Late": 0, "Absent": 0})
+        over_time[key][s.slip_type] += 1
+    over_time = dict(sorted(over_time.items()))
+
+    return render_template('attendance_insights.html',
+                           teacher_name=teacher_email.split('@')[0].replace('.', ' ').title(),
+                           counts_by_type=counts_by_type, per_student=per_student,
+                           over_time=over_time, total=len(slips),
+                           students_flagged=len(per_student))
+
+
 
 @app.route('/form', methods=['GET', 'POST'])
 @login_required
@@ -505,20 +938,22 @@ def form():
     form = HealthDataForm()
     teacher_email = session.get('teacher_email')
 
-    if teacher_email not in teachers:
+    if teacher_email not in get_teachers():
         flash("Unauthorized access.", "danger")
         return redirect(url_for('dashboard'))
 
     # Get teacher's assigned grades & subjects
-    teacher_info = teachers.get(teacher_email, {})
+    teacher_info = get_teachers().get(teacher_email, {})
     allowed_grades = list(teacher_info.get("grades", {}).keys())  # Ensure grades are a list
     grade_subject_mapping = teacher_info.get("grades", {}) if teacher_info.get("grades") else {}
 
     print(f"🔍 DEBUG: Allowed Grades: {allowed_grades}")  # Debugging print
     print(f"🔍 DEBUG: Grade-Subject Mapping: {grade_subject_mapping}")  # Debugging print
 
-    # Fetch students in allowed grades
-    students_in_allowed_grades = Student.query.filter(Student.grade.in_(allowed_grades)).all()
+    # Fetch students in allowed grades (Student.grade is an integer column,
+    # so only pass numeric grades to the query — JK/SK etc. are skipped safely)
+    numeric_grades = [g for g in allowed_grades if isinstance(g, int)]
+    students_in_allowed_grades = Student.query.filter(Student.grade.in_(numeric_grades)).all()
     student_choices = [(student.name, student.name) for student in students_in_allowed_grades]
 
     # Prepare valid subjects (for all grades)
@@ -534,6 +969,15 @@ def form():
     if form.validate_on_submit():
         print("✅ Form submission received!")  # Debugging print
 
+        # Optional reschedule date (only meaningful for yellow slips)
+        reschedule = None
+        rd_raw = request.form.get('reschedule_date')
+        if form.slip_type.data == "Yellow Slip" and rd_raw:
+            try:
+                reschedule = datetime.strptime(rd_raw, "%Y-%m-%d").date()
+            except ValueError:
+                reschedule = None
+
         new_data = HealthData(
             date=form.date.data,
             slip_type=form.slip_type.data,
@@ -541,7 +985,8 @@ def form():
             grade_of_student=int(form.grade_of_student.data),
             subject_of_student=form.subject_of_student.data,
             homework_desc=form.homework_desc.data,
-            teacher_email=teacher_email
+            teacher_email=teacher_email,
+            reschedule_date=reschedule,
         )
         db.session.add(new_data)
         db.session.commit()
@@ -552,7 +997,10 @@ def form():
             check_three_pink_slips(new_data.student_name)
             print("✅ Email process triggered!")  # Debugging print
 
-        flash(f"Slip assigned to {new_data.student_name}.", "success")
+        if reschedule:
+            flash(f"Yellow slip assigned to {new_data.student_name}. You'll be reminded on {reschedule.strftime('%B %d, %Y')}.", "success")
+        else:
+            flash(f"Slip assigned to {new_data.student_name}.", "success")
         return redirect(url_for('dashboard'))
 
     # Print validation errors
@@ -570,7 +1018,12 @@ def form():
 
 def dashboard():
     teacher_email = session.get('teacher_email')
-    teacher_info = teachers.get(teacher_email, {})
+    # Fire time-based reminders (yellow-slip due dates etc.) when a teacher lands here.
+    try:
+        run_daily_tasks()
+    except Exception as e:
+        print(f"daily task (dashboard) error: {e}")
+    teacher_info = get_teachers().get(teacher_email, {})
     homeroom_grades = teacher_info.get("homeroom_grade")  # Can be int or list
     if isinstance(homeroom_grades, int):
         homeroom_grades = [homeroom_grades]  # normalize to list
@@ -581,7 +1034,8 @@ def dashboard():
     # Query 1: All slips for homeroom students
     homeroom_slips = []
     if homeroom_grades:
-        students = Student.query.filter(Student.grade.in_(homeroom_grades)).all()
+        numeric_homeroom = [g for g in homeroom_grades if isinstance(g, int)]
+        students = Student.query.filter(Student.grade.in_(numeric_homeroom)).all()
         student_names = [s.name for s in students]
         homeroom_slips = HealthData.query.filter(HealthData.student_name.in_(student_names)).all()
 
@@ -662,7 +1116,7 @@ def archive_entry(entry_id):
 @login_required
 def archive():
     teacher_email = session.get('teacher_email')
-    teacher_info = teachers.get(teacher_email, {})
+    teacher_info = get_teachers().get(teacher_email, {})
     homeroom_grades = teacher_info.get("homeroom_grade")
     teacher_name = teacher_info.get("name", "")
     if isinstance(homeroom_grades, int):
@@ -717,18 +1171,14 @@ def delete_archive_entry(entry_id):
 def login():
     try:
         if request.method == 'POST':
-            email = request.form['email']
-            password = request.form['password']
+            email = (request.form.get('email') or '').strip().lower()
+            password = request.form.get('password') or ''
 
-            if email in teachers:
-                hashed_password = teachers[email]["password"]  # Get the stored hashed password
-
-                if check_password_hash(hashed_password, password):
-                    session['teacher_email'] = email  # Store email in session
-                    flash('Login successful!', 'success')
-                    return redirect(url_for('dashboard'))
-                else:
-                    flash('Invalid email or password.', 'danger')
+            teacher = Teacher.query.filter_by(email=email).first()
+            if teacher and check_password_hash(teacher.password_hash, password):
+                session['teacher_email'] = email  # Store email in session
+                flash('Login successful!', 'success')
+                return redirect(url_for('dashboard'))
             else:
                 flash('Invalid email or password.', 'danger')
 
@@ -738,6 +1188,64 @@ def login():
         print(f"Error in /login route: {e}")  # Print error to terminal
         flash("An unexpected error occurred. Please try again.", "danger")
         return redirect(url_for('login'))
+
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    """Teachers create their own account and declare what they teach."""
+    if request.method == 'POST':
+        name = (request.form.get('name') or '').strip()
+        email = (request.form.get('email') or '').strip().lower()
+        phone = _normalize_e164(request.form.get('phone'))
+        password = request.form.get('password') or ''
+        confirm = request.form.get('confirm') or ''
+
+        # --- validation ---
+        if not name or not email or not password:
+            flash('Please fill in your name, email, and password.', 'danger')
+            return redirect(url_for('register'))
+        if password != confirm:
+            flash('The two passwords do not match.', 'danger')
+            return redirect(url_for('register'))
+        if len(password) < 8:
+            flash('Please choose a password with at least 8 characters.', 'danger')
+            return redirect(url_for('register'))
+        if Teacher.query.filter_by(email=email).first():
+            flash('An account with that email already exists. Try logging in.', 'warning')
+            return redirect(url_for('login'))
+
+        # --- homeroom grades: checkboxes named "homeroom" ---
+        homeroom = []
+        for val in request.form.getlist('homeroom'):
+            homeroom.append(int(val) if val.isdigit() else val)
+
+        # --- grade -> subjects: checkboxes named "teach_<grade>" ---
+        grades = {}
+        possible_grades = ['JK', 'SK', 1, 2, 3, 4, 5, 6, 7, 8]
+        for g in possible_grades:
+            subjects = request.form.getlist(f'teach_{g}')
+            if subjects:
+                grades[str(g)] = subjects  # keys stored as strings in JSON
+
+        if not grades:
+            flash('Please select at least one subject you teach.', 'danger')
+            return redirect(url_for('register'))
+
+        teacher = Teacher(
+            name=name,
+            email=email,
+            phone=phone,
+            password_hash=generate_password_hash(password),
+            homeroom_grades_json=json.dumps(homeroom),
+            grades_json=json.dumps(grades),
+        )
+        db.session.add(teacher)
+        db.session.commit()
+
+        flash('Account created — welcome! Please log in.', 'success')
+        return redirect(url_for('login'))
+
+    return render_template('register.html')
 
 
 @app.route('/logout')
@@ -763,9 +1271,15 @@ def convert_yellow_to_pink(entry_id):
             pink_slips = HealthData.query.filter_by(student_name=entry.student_name, slip_type="Pink Slip").count()
 
             if pink_slips < 3:
-                # If it's NOT the third pink slip, send a normal email
-                send_email_to_parent(entry.student_name, student.parent_email_mom, student.parent_email_dad [entry])
-                send_whatsapp_message(student.parent_whatsapp, [entry])
+                # If it's NOT the third pink slip, send a normal notification.
+                # send_email_to_parent() also fires SMS/WhatsApp internally,
+                # so there's no separate messaging call needed here.
+                send_email_to_parent(
+                    entry.student_name,
+                    student.parent_email_mom,
+                    student.parent_email_dad,
+                    [entry],
+                )
             else:
                 # If it's the third Pink Slip, let check_three_pink_slips() handle the email
                 check_three_pink_slips(entry.student_name)
@@ -783,7 +1297,7 @@ def convert_yellow_to_pink(entry_id):
 @login_required
 def insights():
     teacher_email = session.get('teacher_email')
-    teacher_info = teachers.get(teacher_email, {})
+    teacher_info = get_teachers().get(teacher_email, {})
     homeroom_grades = teacher_info.get("homeroom_grade", [])
     subjects_by_grade = teacher_info.get("grades", {})
 
@@ -831,8 +1345,19 @@ def insights():
     slips_by_subject = {}
     slips_by_student_homeroom = {}
 
+    # 📈 Trend over time (by month) — for the line chart
+    slips_over_time = {}          # {"2025-06": {"Pink Slip": n, "Yellow Slip": m}}
+    for slip in teacher_slips:
+        if not getattr(slip, "date", None):
+            continue
+        key = slip.date.strftime("%Y-%m")
+        slips_over_time.setdefault(key, {"Pink Slip": 0, "Yellow Slip": 0})
+        slips_over_time[key][slip.slip_type] = slips_over_time[key].get(slip.slip_type, 0) + 1
+    slips_over_time = dict(sorted(slips_over_time.items()))
+
     if homeroom_grades:
-        homeroom_students = Student.query.filter(Student.grade.in_(homeroom_grades)).all()
+        numeric_homeroom = [g for g in homeroom_grades if isinstance(g, int)]
+        homeroom_students = Student.query.filter(Student.grade.in_(numeric_homeroom)).all()
         homeroom_names = [s.name for s in homeroom_students]
 
         slips = HealthData.query.filter(HealthData.student_name.in_(homeroom_names)).all()
@@ -851,7 +1376,8 @@ def insights():
         slips_by_student_homeroom=slips_by_student_homeroom,
         slips_stacked_data=slips_stacked_data,
         slip_type_details=slip_type_details,
-        slips_per_grade_subject=slips_per_grade_subject
+        slips_per_grade_subject=slips_per_grade_subject,
+        slips_over_time=slips_over_time
     )
 
 
@@ -859,7 +1385,7 @@ def insights():
 @login_required
 def evaluate_students():
     teacher_email = session.get('teacher_email')
-    teacher_info = teachers.get(teacher_email, {})
+    teacher_info = get_teachers().get(teacher_email, {})
     all_grades = teacher_info.get("grades", {}).keys()
 
     # Fetch students that the teacher teaches
@@ -1017,12 +1543,8 @@ def save_evaluations():
 
     csv_bytes, filename = generate_evaluations_csv(submitted, month, year, teacher_email)
     email_csv_to_principal(csv_bytes, filename, teacher_email, month, year)
-    try:
-        whatsapp_send_csv(csv_bytes, filename, month, year)
-    except Exception as e:
-        print(f"WhatsApp send failed: {e}")
 
-    flash("Evaluations submitted and sent to principal (email + WhatsApp).", "success")
+    flash("Evaluations submitted and emailed to the principal.", "success")
     return redirect(url_for('view_evaluations', month=month, year=year))
 
 
