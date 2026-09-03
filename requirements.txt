@@ -25,7 +25,6 @@ pillow
 python-dateutil
 tqdm
 
-
 # --- SMS ---
 # ClickSend needs nothing beyond `requests` (already above).
 # Uncomment ONLY if you set SMS_PROVIDER='plivo':

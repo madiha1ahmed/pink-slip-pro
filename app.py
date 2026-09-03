@@ -20,6 +20,15 @@ import requests
 # SMS provider SDK (Plivo) is imported lazily inside send_sms_message so the app
 # still runs if you choose the ClickSend HTTP option and never install plivo.
 
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+from openai import OpenAI
+
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
 
 
 PRINCIPAL_EMAIL = os.getenv("PRINCIPAL_EMAIL")       # e.g. principal@school.org

@@ -1,9 +1,14 @@
 from flask_wtf import FlaskForm
 from wtforms import IntegerField, SubmitField, DateField, StringField, SelectField
 from wtforms.validators import InputRequired, NumberRange, DataRequired
+from wtforms.widgets import DateInput
+from datetime import date
 
 class HealthDataForm(FlaskForm):
-    date = DateField('Date', format='%Y-%m-%d', validators=[DataRequired()])
+    # render_kw type="date" makes the browser show a real calendar picker;
+    # default=date.today pre-fills today so the teacher usually doesn't touch it.
+    date = DateField('Date', format='%Y-%m-%d', validators=[DataRequired()],
+                     default=date.today, render_kw={"type": "date"})
     slip_type = SelectField("Type of homework slip", 
                             choices=[("", 'Select type of homework slip')]+[(str(i), f"{i}") for i in ["Pink Slip", "Yellow Slip"]],
                             validators = [DataRequired()])
